@@ -7,10 +7,6 @@ import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius } from '../constants';
 import { useLowStockItems } from '../store';
 import { Shift, ShiftEntryType } from '../types';
-import { UsageScreen }    from '../screens/shift/UsageScreen';
-import { PurchaseScreen } from '../screens/shift/PurchaseScreen';
-import { OutputScreen }   from '../screens/shift/OutputScreen';
-import { WasteScreen }    from '../screens/shift/WasteScreen';
 
 // ─── Importaciones de pantallas ───────────────────────────────────────────────
 import { InventoryListScreen }        from '../screens/inventory/InventoryListScreen';
@@ -19,8 +15,13 @@ import { ShiftDashboardScreen }       from '../screens/shift/ShiftDashboardScree
 import { AddDessertScreen }           from '../screens/shift/AddDessertScreen';
 import { CloseShiftScreen }           from '../screens/shift/CloseShiftScreen';
 import { ShiftSummaryScreen }         from '../screens/shift/ShiftSummaryScreen';
+import { UsageScreen }                from '../screens/shift/UsageScreen';
+import { PurchaseScreen }             from '../screens/shift/PurchaseScreen';
+import { OutputScreen }               from '../screens/shift/OutputScreen';
+import { WasteScreen }                from '../screens/shift/WasteScreen';
 import { ShiftHistoryScreen }         from '../screens/history/ShiftHistoryScreen';
 import { ShiftHistoryDetailScreen }   from '../screens/history/ShiftHistoryDetailScreen';
+import { StatsScreen }                from '../screens/stats/StatsScreen';
 
 // ─── Tipos de rutas ───────────────────────────────────────────────────────────
 export type InventoryStackParams = {
@@ -40,9 +41,10 @@ export type ShiftStackParams = {
 };
 
 export type TabParams = {
-  InventoryTab: undefined;
-  ShiftTab:     undefined;
-  HistoryTab:   undefined;
+  InventoryTab:  undefined;
+  ShiftTab:      undefined;
+  HistoryTab:    undefined;
+  StatsTab:      undefined;
 };
 
 // ─── Navegadores ──────────────────────────────────────────────────────────────
@@ -54,14 +56,8 @@ const ShiftStack     = createNativeStackNavigator<ShiftStackParams>();
 function InventoryNavigator() {
   return (
     <InventoryStack.Navigator screenOptions={{ headerShown: false }}>
-      <InventoryStack.Screen
-        name="InventoryList"
-        component={InventoryListScreen}
-      />
-      <InventoryStack.Screen
-        name="IngredientForm"
-        component={IngredientFormScreen}
-      />
+      <InventoryStack.Screen name="InventoryList"  component={InventoryListScreen}  />
+      <InventoryStack.Screen name="IngredientForm" component={IngredientFormScreen} />
     </InventoryStack.Navigator>
   );
 }
@@ -96,9 +92,7 @@ function HistoryNavigator() {
   }
 
   return (
-    <ShiftHistoryScreen
-      onSelectShift={setSelectedShift}
-    />
+    <ShiftHistoryScreen onSelectShift={setSelectedShift} />
   );
 }
 
@@ -180,6 +174,19 @@ export function AppNavigator() {
             tabBarIcon: ({ color }) => (
               <TabIcon
                 icon={<Feather name="clock" size={22} color={color} />}
+              />
+            ),
+          }}
+        />
+
+        <Tab.Screen
+          name="StatsTab"
+          component={StatsScreen}
+          options={{
+            tabBarLabel: 'Estadísticas',
+            tabBarIcon: ({ color }) => (
+              <TabIcon
+                icon={<Feather name="bar-chart-2" size={22} color={color} />}
               />
             ),
           }}

@@ -1,14 +1,16 @@
 import { create } from 'zustand';
 import { IngredientSlice, createIngredientSlice } from './slices/ingredient.slice';
 import { ShiftSlice, createShiftSlice } from './slices/shift.slice';
+import { StatsSlice, createStatsSlice } from './slices/stats.slice';
 
 // ─── Tipo del store combinado ─────────────────────────────────────────────────
-export type AppStore = IngredientSlice & ShiftSlice;
+export type AppStore = IngredientSlice & ShiftSlice & StatsSlice;
 
 // ─── Store global único ───────────────────────────────────────────────────────
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createIngredientSlice(...args),
   ...createShiftSlice(...args),
+  ...createStatsSlice(...args),
 }));
 
 // ─── Selectores de ingredientes ───────────────────────────────────────────────
@@ -81,5 +83,36 @@ export const useShiftActions = () => {
     clearShiftSummary,
     clearShiftError,
     deleteShift,
+  };
+};
+
+// ─── Selectores de estadísticas ───────────────────────────────────────────────
+export const useStatsData = () =>
+  useAppStore(state => state.statsData);
+
+export const useStatsPeriod = () =>
+  useAppStore(state => state.statsPeriod);
+
+export const useCustomRange = () =>
+  useAppStore(state => state.customRange);
+
+export const useIsLoadingStats = () =>
+  useAppStore(state => state.isLoadingStats);
+
+export const useStatsError = () =>
+  useAppStore(state => state.statsError);
+
+// ─── Acciones de estadísticas ─────────────────────────────────────────────────
+export const useStatsActions = () => {
+  const loadStats       = useAppStore(state => state.loadStats);
+  const setStatsPeriod  = useAppStore(state => state.setStatsPeriod);
+  const setCustomRange  = useAppStore(state => state.setCustomRange);
+  const clearStatsError = useAppStore(state => state.clearStatsError);
+
+  return {
+    loadStats,
+    setStatsPeriod,
+    setCustomRange,
+    clearStatsError,
   };
 };
