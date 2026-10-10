@@ -221,19 +221,17 @@ export const ShiftDashboardScreen: React.FC = () => {
         </View>
 
         {/* ── Botón cerrar turno ─────────────────────────────────────── */}
-        {currentShift.entries.length > 0 && (
-          <Button
-            label="Cerrar turno y hacer cuadre"
-            onPress={() => navigation.navigate('CloseShift')}
-            variant="primary"
-            size="lg"
-            fullWidth
-            style={styles.closeButton}
-            leftIcon={
-              <Feather name="check-circle" size={18} color={Colors.textOnPrimary} />
-            }
-          />
-        )}
+        <Button
+          label="Cerrar turno y hacer cuadre"
+          onPress={() => navigation.navigate('CloseShift')}
+          variant="primary"
+          size="lg"
+          fullWidth
+          style={styles.closeButton}
+          leftIcon={
+          <Feather name="check-circle" size={18} color={Colors.textOnPrimary} />
+        } 
+        />
       </ScrollView>
     </View>
   );

@@ -1,5 +1,5 @@
 // ─── Versión actual del esquema ───────────────────────────────────────────────
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 export const DB_NAME    = 'delicias_cami.db';
 
 // ─── Sentencias SQL de creación de tablas ─────────────────────────────────────
@@ -18,14 +18,18 @@ export const CREATE_TABLES_SQL = `
   );
 
   CREATE TABLE IF NOT EXISTS shifts (
-    id             TEXT PRIMARY KEY NOT NULL,
-    date           TEXT NOT NULL,
-    status         TEXT NOT NULL DEFAULT 'open',
-    total_revenue  REAL NOT NULL DEFAULT 0,
-    total_invested REAL NOT NULL DEFAULT 0,
-    net_profit     REAL NOT NULL DEFAULT 0,
-    opened_at      TEXT NOT NULL,
-    closed_at      TEXT
+    id                   TEXT PRIMARY KEY NOT NULL,
+    date                 TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'open',
+    total_revenue        REAL NOT NULL DEFAULT 0,
+    cash_revenue         REAL NOT NULL DEFAULT 0,
+    transfer_revenue     REAL NOT NULL DEFAULT 0,
+    transfer_commission  REAL NOT NULL DEFAULT 0,
+    fixed_costs          REAL NOT NULL DEFAULT 0,
+    total_invested       REAL NOT NULL DEFAULT 0,
+    net_profit           REAL NOT NULL DEFAULT 0,
+    opened_at            TEXT NOT NULL,
+    closed_at            TEXT
   );
 
   CREATE TABLE IF NOT EXISTS shift_entries (
@@ -105,4 +109,11 @@ export const MIGRATION_V3_SQL = `
   CREATE INDEX IF NOT EXISTS idx_shift_entries_type
     ON shift_entries(type);
 
+`;
+
+export const MIGRATION_V4_SQL = `
+  ALTER TABLE shifts ADD COLUMN cash_revenue        REAL NOT NULL DEFAULT 0;
+  ALTER TABLE shifts ADD COLUMN transfer_revenue    REAL NOT NULL DEFAULT 0;
+  ALTER TABLE shifts ADD COLUMN transfer_commission REAL NOT NULL DEFAULT 0;
+  ALTER TABLE shifts ADD COLUMN fixed_costs         REAL NOT NULL DEFAULT 0;
 `;

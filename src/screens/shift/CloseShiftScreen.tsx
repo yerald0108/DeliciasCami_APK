@@ -102,7 +102,7 @@ const EntriesSection: React.FC<{
 
       {type === 'usage' && (
         <View style={styles.sectionTotal}>
-          <Text style={styles.sectionTotalLabel}>Subtotal</Text>
+          <Text style={styles.sectionTotalLabel}>Subtotal insumos</Text>
           <Text style={[styles.sectionTotalValue, { color: config.color }]}>
             {formatCurrency(entries.reduce((s, e) => s + e.totalCost, 0))}
           </Text>
@@ -112,15 +112,43 @@ const EntriesSection: React.FC<{
   );
 };
 
+// ─── Fila de desglose financiero ─────────────────────────────────────────────
+const DesgloseFila: React.FC<{
+  label:    string;
+  value:    number;
+  color?:   string;
+  bold?:    boolean;
+  hint?:    string;
+  signo?:   string;
+}> = ({ label, value, color, bold, hint, signo = '' }) => (
+  <View style={styles.desgloseRow}>
+    <View style={styles.desgloseLeft}>
+      <Text style={[styles.desgloseLabel, bold && styles.desgloseLabelBold]}>
+        {signo}{label}
+      </Text>
+      {hint && <Text style={styles.desgloseHint}>{hint}</Text>}
+    </View>
+    <Text style={[
+      styles.desgloseValue,
+      bold  && styles.desgloseValueBold,
+      color ? { color } : {},
+    ]}>
+      {formatCurrency(value)}
+    </Text>
+  </View>
+);
+
 // ─── Pantalla ─────────────────────────────────────────────────────────────────
 export const CloseShiftScreen: React.FC = () => {
   const navigation   = useNavigation<NavigationProp>();
   const currentShift = useCurrentShift();
   const { closeShift } = useShiftActions();
 
-  const [totalRevenue, setTotalRevenue] = useState('');
-  const [revenueError, setRevenueError] = useState('');
-  const [isLoading,    setIsLoading]    = useState(false);
+  const [cashRevenue,     setCashRevenue]     = useState('');
+  const [transferRevenue, setTransferRevenue] = useState('');
+  const [cashError,       setCashError]       = useState('');
+  const [transferError,   setTransferError]   = useState('');
+  const [isLoading,       setIsLoading]       = useState(false);
 
   if (!currentShift) return null;
 
@@ -130,21 +158,43 @@ export const CloseShiftScreen: React.FC = () => {
   const outputEntries   = currentShift.entries.filter(e => e.type === 'output');
   const wasteEntries    = currentShift.entries.filter(e => e.type === 'waste');
 
-  // ── Total invertido (solo usage) ──────────────────────────────────────────
-  const totalInvested = usageEntries.reduce((s, e) => s + e.totalCost, 0);
+  // ── Cálculos en tiempo real ───────────────────────────────────────────────
+  const cashValue     = parseFloat(cashRevenue)     || 0;
+  const transferValue = parseFloat(transferRevenue) || 0;
+  const totalBruto    = cashValue + transferValue;
 
-  const revenueValue    = parseFloat(totalRevenue) || 0;
-  const projectedProfit = revenueValue - totalInvested;
+  const comisionTransfer = transferValue * 0.15;
+  const gastosFijos      = totalBruto   * 0.20;
+  const totalInsumos     = usageEntries.reduce((s, e) => s + e.totalCost, 0);
+  const totalInvertido   = totalInsumos + comisionTransfer + gastosFijos;
+  const gananciaReal     = totalBruto - comisionTransfer - gastosFijos - totalInsumos;
+
+  const hayDatos = totalBruto > 0;
 
   // ── Validación ────────────────────────────────────────────────────────────
   const validate = (): boolean => {
-    const value = parseFloat(totalRevenue);
-    if (!totalRevenue || isNaN(value) || value < 0) {
-      setRevenueError('Ingresa el total recaudado en ventas');
-      return false;
+    let ok = true;
+
+    if (cashValue < 0) {
+      setCashError('El valor no puede ser negativo');
+      ok = false;
+    } else {
+      setCashError('');
     }
-    setRevenueError('');
-    return true;
+
+    if (transferValue < 0) {
+      setTransferError('El valor no puede ser negativo');
+      ok = false;
+    } else {
+      setTransferError('');
+    }
+
+    if (cashValue === 0 && transferValue === 0) {
+      setCashError('Ingresa al menos un valor (efectivo o transferencia)');
+      ok = false;
+    }
+
+    return ok;
   };
 
   // ── Cerrar turno ──────────────────────────────────────────────────────────
@@ -153,7 +203,7 @@ export const CloseShiftScreen: React.FC = () => {
 
     Alert.alert(
       'Cerrar turno',
-      `¿Confirmas cerrar el turno con ${formatCurrency(revenueValue)} en ventas?`,
+      `¿Confirmas cerrar el turno?\n\nEfectivo: ${formatCurrency(cashValue)}\nTransferencia: ${formatCurrency(transferValue)}\nGanancia real estimada: ${formatCurrency(gananciaReal)}`,
       [
         { text: 'Revisar', style: 'cancel' },
         {
@@ -162,7 +212,7 @@ export const CloseShiftScreen: React.FC = () => {
           onPress: async () => {
             setIsLoading(true);
             try {
-              const success = await closeShift(revenueValue);
+              const success = await closeShift(cashValue, transferValue);
               if (success) {
                 navigation.replace('ShiftSummary');
               } else {
@@ -230,9 +280,9 @@ export const CloseShiftScreen: React.FC = () => {
           </View>
 
           <View style={styles.summaryInvested}>
-            <Text style={styles.summaryInvestedLabel}>Total invertido en insumos</Text>
+            <Text style={styles.summaryInvestedLabel}>Invertido en insumos</Text>
             <Text style={styles.summaryInvestedValue}>
-              {formatCurrency(totalInvested)}
+              {formatCurrency(totalInsumos)}
             </Text>
           </View>
         </Card>
@@ -245,62 +295,117 @@ export const CloseShiftScreen: React.FC = () => {
 
         {/* ── Ventas del día ────────────────────────────────────────── */}
         <Card variant="outlined" style={styles.section}>
-          <Text style={styles.sectionTitle}>Ventas del día</Text>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIconWrapper, { backgroundColor: Colors.secondaryLight }]}>
+              <Feather name="dollar-sign" size={14} color={Colors.secondary} />
+            </View>
+            <Text style={[styles.sectionTitle, { color: Colors.secondaryDark }]}>
+              Ventas del día
+            </Text>
+          </View>
 
           <Input
-            label="Total recaudado en ventas"
+            label="Efectivo recibido"
             placeholder="0.00"
-            value={totalRevenue}
+            value={cashRevenue}
             onChangeText={v => {
-              setTotalRevenue(v);
-              if (revenueError) setRevenueError('');
+              setCashRevenue(v);
+              if (cashError) setCashError('');
             }}
-            error={revenueError}
-            required
+            error={cashError}
             keyboardType="decimal-pad"
-            hint="Suma todo el dinero que recibiste hoy por tus ventas"
-            leftIcon={
-              <Text style={styles.currencyPrefix}>$</Text>
-            }
+            hint="Dinero que recibiste en billetes/monedas"
+            leftIcon={<Text style={styles.currencyPrefix}>$</Text>}
           />
+
+          <Input
+            label="Transferencias recibidas"
+            placeholder="0.00"
+            value={transferRevenue}
+            onChangeText={v => {
+              setTransferRevenue(v);
+              if (transferError) setTransferError('');
+            }}
+            error={transferError}
+            keyboardType="decimal-pad"
+            hint="Monto total cobrado por transferencia (ya incluye el 15% de comisión)"
+            leftIcon={<Text style={styles.currencyPrefix}>$</Text>}
+          />
+
+          {transferValue > 0 && (
+            <View style={styles.commissionNote}>
+              <Feather name="info" size={13} color={Colors.warning} />
+              <Text style={styles.commissionNoteText}>
+                Se descontará {formatCurrency(comisionTransfer)} (15%) por costo de extracción de transferencia
+              </Text>
+            </View>
+          )}
         </Card>
 
-        {/* ── Vista previa de ganancia ──────────────────────────────── */}
-        {revenueValue > 0 && (
-          <Card
-            variant="elevated"
-            style={[
-              styles.profitCard,
-              projectedProfit >= 0 ? styles.profitCardPositive : styles.profitCardNegative,
-            ]}
-          >
-            <View style={styles.profitRow}>
-              <View style={styles.profitItem}>
-                <Text style={styles.profitItemLabel}>Recaudado</Text>
-                <Text style={styles.profitItemValue}>
-                  {formatCurrency(revenueValue)}
-                </Text>
+        {/* ── Desglose financiero ───────────────────────────────────── */}
+        {hayDatos && (
+          <Card variant="outlined" style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={[styles.sectionIconWrapper, { backgroundColor: Colors.infoLight }]}>
+                <Feather name="bar-chart-2" size={14} color={Colors.info} />
               </View>
-              <Text style={styles.profitOperator}>−</Text>
-              <View style={styles.profitItem}>
-                <Text style={styles.profitItemLabel}>Invertido</Text>
-                <Text style={styles.profitItemValue}>
-                  {formatCurrency(totalInvested)}
-                </Text>
-              </View>
-              <Text style={styles.profitOperator}>=</Text>
-              <View style={styles.profitItem}>
-                <Text style={styles.profitItemLabel}>Ganancia</Text>
-                <Text style={[
-                  styles.profitResult,
-                  projectedProfit >= 0
-                    ? styles.profitResultPositive
-                    : styles.profitResultNegative,
-                ]}>
-                  {formatCurrency(projectedProfit)}
-                </Text>
-              </View>
+              <Text style={[styles.sectionTitle, { color: Colors.info }]}>
+                Desglose del cuadre
+              </Text>
             </View>
+
+            <DesgloseFila
+              label="Efectivo"
+              value={cashValue}
+              color={Colors.success}
+            />
+            <DesgloseFila
+              label="Transferencias"
+              value={transferValue}
+              color={Colors.success}
+            />
+            <View style={styles.desgloseSeparator} />
+            <DesgloseFila
+              label="Total bruto"
+              value={totalBruto}
+              bold
+            />
+            <View style={styles.desgloseSeparator} />
+            <DesgloseFila
+              label="Comisión transferencia (15%)"
+              value={comisionTransfer}
+              color={Colors.error}
+              hint="Costo de extraer el dinero"
+              signo="− "
+            />
+            <DesgloseFila
+              label="Gastos fijos (20%)"
+              value={gastosFijos}
+              color={Colors.error}
+              hint="Agua, luz, gas, etc."
+              signo="− "
+            />
+            <DesgloseFila
+              label="Inversión en insumos"
+              value={totalInsumos}
+              color={Colors.error}
+              signo="− "
+            />
+            <View style={styles.desgloseSeparator} />
+            <DesgloseFila
+              label="Total descontado"
+              value={totalInvertido}
+              color={Colors.error}
+              bold
+              signo="− "
+            />
+            <View style={[styles.desgloseSeparator, styles.desgloseSeparatorThick]} />
+            <DesgloseFila
+              label="Ganancia real"
+              value={gananciaReal}
+              color={gananciaReal >= 0 ? Colors.success : Colors.error}
+              bold
+            />
           </Card>
         )}
 
@@ -327,89 +432,74 @@ const styles = StyleSheet.create({
     flex:            1,
     backgroundColor: Colors.background,
   },
-
   scroll: {
     flex: 1,
   },
-
   scrollContent: {
     padding:       Spacing.base,
     gap:           Spacing.md,
     paddingBottom: Spacing.xxxl,
   },
-
   summaryCard: {
     gap: Spacing.md,
   },
-
   summaryHeader: {
     flexDirection: 'row',
     alignItems:    'center',
     gap:           Spacing.sm,
   },
-
   summaryTitle: {
     fontSize:   Typography.md,
     fontWeight: Typography.semibold,
     color:      Colors.textPrimary,
   },
-
   summaryStats: {
     flexDirection:   'row',
     backgroundColor: Colors.background,
     borderRadius:    Radius.md,
     padding:         Spacing.md,
   },
-
   summaryStat: {
     flex:       1,
     alignItems: 'center',
     gap:        4,
   },
-
   summaryStatValue: {
     fontSize:   Typography.xl,
     fontWeight: Typography.bold,
     color:      Colors.textPrimary,
   },
-
   summaryStatLabel: {
     fontSize:  Typography.xs,
     color:     Colors.textMuted,
     textAlign: 'center',
   },
-
   summaryInvested: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    justifyContent:    'space-between',
-    backgroundColor:   Colors.primaryLight,
-    borderRadius:      Radius.md,
-    padding:           Spacing.md,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+    backgroundColor: Colors.primaryLight,
+    borderRadius:    Radius.md,
+    padding:         Spacing.md,
   },
-
   summaryInvestedLabel: {
     fontSize:   Typography.sm,
     fontWeight: Typography.medium,
     color:      Colors.primaryDark,
   },
-
   summaryInvestedValue: {
     fontSize:   Typography.lg,
     fontWeight: Typography.bold,
     color:      Colors.primary,
   },
-
   section: {
     gap: Spacing.sm,
   },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems:    'center',
     gap:           Spacing.sm,
   },
-
   sectionIconWrapper: {
     width:          26,
     height:         26,
@@ -417,21 +507,18 @@ const styles = StyleSheet.create({
     alignItems:     'center',
     justifyContent: 'center',
   },
-
   sectionTitle: {
-    flex:       1,
-    fontSize:   Typography.sm,
-    fontWeight: Typography.semibold,
+    flex:          1,
+    fontSize:      Typography.sm,
+    fontWeight:    Typography.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-
   sectionNotice: {
-    fontSize:   Typography.xs,
-    color:      Colors.textMuted,
-    fontStyle:  'italic',
+    fontSize:  Typography.xs,
+    color:     Colors.textMuted,
+    fontStyle: 'italic',
   },
-
   sectionTotal: {
     flexDirection:  'row',
     alignItems:     'center',
@@ -441,117 +528,106 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.border,
     marginTop:      Spacing.xs,
   },
-
   sectionTotalLabel: {
     fontSize:   Typography.sm,
     fontWeight: Typography.semibold,
     color:      Colors.textSecondary,
   },
-
   sectionTotalValue: {
     fontSize:   Typography.md,
     fontWeight: Typography.bold,
   },
-
   entryRow: {
     flexDirection:   'row',
     alignItems:      'center',
     justifyContent:  'space-between',
     paddingVertical: Spacing.xs,
   },
-
   entryInfo: {
     flex: 1,
     gap:  2,
   },
-
   entryName: {
     fontSize:   Typography.base,
     fontWeight: Typography.medium,
     color:      Colors.textPrimary,
   },
-
   entryQty: {
     fontSize: Typography.xs,
     color:    Colors.textMuted,
   },
-
   entryCost: {
     fontSize:   Typography.base,
     fontWeight: Typography.semibold,
   },
-
   divider: {
     height:          1,
     backgroundColor: Colors.divider,
     marginVertical:  Spacing.xs,
   },
-
   currencyPrefix: {
     fontSize:    Typography.base,
     color:       Colors.textSecondary,
     fontWeight:  Typography.medium,
     paddingLeft: Spacing.sm,
   },
-
-  profitCard: {
-    padding: Spacing.lg,
+  commissionNote: {
+    flexDirection:   'row',
+    alignItems:      'flex-start',
+    gap:             Spacing.xs,
+    backgroundColor: Colors.warningLight,
+    borderRadius:    Radius.sm,
+    padding:         Spacing.sm,
+    marginTop:       Spacing.xs,
   },
-
-  profitCardPositive: {
-    backgroundColor: Colors.successLight,
-    borderWidth:     1.5,
-    borderColor:     Colors.success,
+  commissionNoteText: {
+    flex:      1,
+    fontSize:  Typography.xs,
+    color:     Colors.warning,
+    lineHeight: 16,
   },
-
-  profitCardNegative: {
-    backgroundColor: Colors.errorLight,
-    borderWidth:     1.5,
-    borderColor:     Colors.error,
-  },
-
-  profitRow: {
+  desgloseRow: {
     flexDirection:  'row',
-    alignItems:     'center',
+    alignItems:     'flex-start',
     justifyContent: 'space-between',
+    paddingVertical: Spacing.xs,
   },
-
-  profitItem: {
-    alignItems: 'center',
-    gap:        4,
-    flex:       1,
+  desgloseLeft: {
+    flex: 1,
+    gap:  2,
   },
-
-  profitItemLabel: {
-    fontSize: Typography.xs,
+  desgloseLabel: {
+    fontSize: Typography.sm,
     color:    Colors.textSecondary,
   },
-
-  profitItemValue: {
-    fontSize:   Typography.sm,
+  desgloseLabelBold: {
     fontWeight: Typography.semibold,
     color:      Colors.textPrimary,
   },
-
-  profitOperator: {
-    fontSize:   Typography.xl,
-    color:      Colors.textMuted,
+  desgloseHint: {
+    fontSize:  Typography.xs,
+    color:     Colors.textMuted,
+    fontStyle: 'italic',
+  },
+  desgloseValue: {
+    fontSize:   Typography.sm,
+    color:      Colors.textPrimary,
+    fontWeight: Typography.medium,
+  },
+  desgloseValueBold: {
+    fontSize:   Typography.md,
     fontWeight: Typography.bold,
   },
-
-  profitResult: {
-    fontSize:   Typography.lg,
-    fontWeight: Typography.bold,
+  desgloseSeparator: {
+    height:          1,
+    backgroundColor: Colors.border,
+    marginVertical:  Spacing.xs,
   },
-
-  profitResultPositive: {
-    color: Colors.success,
+  desgloseSeparatorThick: {
+    height:          2,
+    backgroundColor: Colors.borderStrong,
+    marginVertical:  Spacing.sm,
   },
-
-  profitResultNegative: {
-    color: Colors.error,
-  },
-
   closeButton: {
     marginTop: Spacing.sm,
   },

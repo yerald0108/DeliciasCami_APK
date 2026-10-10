@@ -13,15 +13,19 @@ function now(): string {
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 function rowToShift(row: any, entries: ShiftEntry[] = []): Shift {
   return {
-    id:            row.id,
-    date:          row.date,
-    status:        row.status as ShiftStatus,
+    id:                  row.id,
+    date:                row.date,
+    status:              row.status as ShiftStatus,
     entries,
-    totalRevenue:  row.total_revenue,
-    totalInvested: row.total_invested,
-    netProfit:     row.net_profit,
-    openedAt:      row.opened_at,
-    closedAt:      row.closed_at ?? null,
+    totalRevenue:        row.total_revenue,
+    cashRevenue:         row.cash_revenue        ?? 0,
+    transferRevenue:     row.transfer_revenue     ?? 0,
+    transferCommission:  row.transfer_commission  ?? 0,
+    fixedCosts:          row.fixed_costs          ?? 0,
+    totalInvested:       row.total_invested,
+    netProfit:           row.net_profit,
+    openedAt:            row.opened_at,
+    closedAt:            row.closed_at ?? null,
   };
 }
 
@@ -110,8 +114,11 @@ export class ShiftRepository {
 
       await this.db.runAsync(
         `INSERT INTO shifts
-          (id, date, status, total_revenue, total_invested, net_profit, opened_at, closed_at)
-         VALUES (?, ?, 'open', 0, 0, 0, ?, NULL);`,
+          (id, date, status,
+          total_revenue, cash_revenue, transfer_revenue,
+          transfer_commission, fixed_costs,
+          total_invested, net_profit, opened_at, closed_at)
+        VALUES (?, ?, 'open', 0, 0, 0, 0, 0, 0, 0, ?, NULL);`,
         [id, date, openedAt]
       );
 
@@ -187,8 +194,9 @@ export class ShiftRepository {
 
   // ─── Cerrar turno ─────────────────────────────────────────────────────────
   async closeShift(
-    shiftId:      string,
-    totalRevenue: number
+    shiftId:          string,
+    cashRevenue:      number,
+    transferRevenue:  number,
   ): Promise<DbResult<Shift>> {
     try {
       const shiftResult = await this.getOpenShift();
@@ -198,22 +206,49 @@ export class ShiftRepository {
 
       const shift = shiftResult.data;
 
-      // Solo las entradas de tipo 'usage' cuentan como inversión
-      const totalInvested = shift.entries
+      // ── Total bruto recaudado ─────────────────────────────────────────────
+      const totalRevenue = cashRevenue + transferRevenue;
+
+      // ── Costo de extracción: 15% de lo cobrado por transferencia ─────────
+      const transferCommission = transferRevenue * 0.15;
+
+      // ── Gastos fijos: 20% del total bruto ────────────────────────────────
+      const fixedCosts = totalRevenue * 0.20;
+
+      // ── Inversión en insumos (solo entries de tipo 'usage') ───────────────
+      const totalInsumos = shift.entries
         .filter(e => e.type === 'usage')
         .reduce((sum, e) => sum + e.totalCost, 0);
 
-      const netProfit = totalRevenue - totalInvested;
+      // ── Total invertido = insumos + comisión + gastos fijos ───────────────
+      const totalInvested = totalInsumos + transferCommission + fixedCosts;
+
+      // ── Ganancia real ─────────────────────────────────────────────────────
+      const netProfit = totalRevenue - transferCommission - fixedCosts - totalInsumos;
 
       await this.db.runAsync(
         `UPDATE shifts SET
-          status         = 'closed',
-          total_revenue  = ?,
-          total_invested = ?,
-          net_profit     = ?,
-          closed_at      = ?
-         WHERE id = ?;`,
-        [totalRevenue, totalInvested, netProfit, now(), shiftId]
+          status               = 'closed',
+          total_revenue        = ?,
+          cash_revenue         = ?,
+          transfer_revenue     = ?,
+          transfer_commission  = ?,
+          fixed_costs          = ?,
+          total_invested       = ?,
+          net_profit           = ?,
+          closed_at            = ?
+        WHERE id = ?;`,
+        [
+          totalRevenue,
+          cashRevenue,
+          transferRevenue,
+          transferCommission,
+          fixedCosts,
+          totalInvested,
+          netProfit,
+          now(),
+          shiftId,
+        ]
       );
 
       const row     = await this.db.getFirstAsync<any>(

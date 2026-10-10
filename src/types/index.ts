@@ -36,15 +36,19 @@ export interface ShiftEntry {
 export type ShiftStatus = 'open' | 'closed';
 
 export interface Shift {
-  id:            string;
-  date:          string;
-  status:        ShiftStatus;
-  entries:       ShiftEntry[];
-  totalRevenue:  number;
-  totalInvested: number;
-  netProfit:     number;
-  openedAt:      string;
-  closedAt:      string | null;
+  id:                  string;
+  date:                string;
+  status:              ShiftStatus;
+  entries:             ShiftEntry[];
+  totalRevenue:        number;   // efectivo + transferencia (bruto)
+  cashRevenue:         number;   // dinero recibido en efectivo
+  transferRevenue:     number;   // dinero recibido en transferencia
+  transferCommission:  number;   // 15% de transferRevenue (costo extracción)
+  fixedCosts:          number;   // 20% del total bruto (agua, luz, etc.)
+  totalInvested:       number;   // insumos + commission + fixedCosts
+  netProfit:           number;   // ganancia real
+  openedAt:            string;
+  closedAt:            string | null;
 }
 
 // ─── Resumen del cuadre de turno ─────────────────────────────────────────────
@@ -58,16 +62,19 @@ export interface ShiftSummaryItem {
 }
 
 export interface ShiftSummary {
-  shift:             Shift;
-  // Solo insumos utilizados cuentan en el cuadre
-  usageSummary:      ShiftSummaryItem[];
-  // Detalle por categoría para el reporte
-  purchaseEntries:   ShiftEntry[];
-  outputEntries:     ShiftEntry[];
-  wasteEntries:      ShiftEntry[];
-  totalInvested:     number;
-  totalRevenue:      number;
-  netProfit:         number;
+  shift:              Shift;
+  usageSummary:       ShiftSummaryItem[];
+  purchaseEntries:    ShiftEntry[];
+  outputEntries:      ShiftEntry[];
+  wasteEntries:       ShiftEntry[];
+  totalInsumos:       number;
+  transferCommission: number;
+  fixedCosts:         number;
+  totalInvested:      number;
+  cashRevenue:        number;
+  transferRevenue:    number;
+  totalRevenue:       number;
+  netProfit:          number;
 }
 
 // ─── Respuesta genérica de base de datos ─────────────────────────────────────

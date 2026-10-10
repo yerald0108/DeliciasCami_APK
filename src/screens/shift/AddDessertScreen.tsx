@@ -28,6 +28,43 @@ type RoutePropType  = RouteProp<ShiftStackParams, 'AddDessert'>;
 
 type PurchaseMode = 'existing' | 'new';
 
+// ─── Conversiones de unidades ─────────────────────────────────────────────────
+type UnitConversion = {
+  from: UnitOfMeasure;
+  to:   UnitOfMeasure;
+  factor: number; // cuántas unidades "to" hay en 1 "from"
+};
+
+const UNIT_CONVERSIONS: UnitConversion[] = [
+  { from: 'kg', to: 'g',  factor: 0.001 },
+  { from: 'g',  to: 'kg', factor: 1000 },
+  { from: 'l',  to: 'ml', factor: 0.001 },
+  { from: 'ml', to: 'l',  factor: 1000 },
+];
+
+// Devuelve las unidades compatibles para registrar uso de un ingrediente
+function getCompatibleUnits(unit: UnitOfMeasure): UnitOfMeasure[] {
+  const related = UNIT_CONVERSIONS
+    .filter(c => c.from === unit)
+    .map(c => c.to);
+  return [unit, ...related];
+}
+
+// Convierte una cantidad de unidad "from" a unidad "to"
+// Retorna la cantidad ya en la unidad base del ingrediente
+function convertToBase(
+  quantity: number,
+  fromUnit: UnitOfMeasure,
+  toUnit:   UnitOfMeasure
+): number {
+  if (fromUnit === toUnit) return quantity;
+  const conversion = UNIT_CONVERSIONS.find(
+    c => c.from === fromUnit && c.to === toUnit
+  );
+  if (!conversion) return quantity;
+  return quantity / conversion.factor;
+}
+
 // ─── Configuración por tipo de entrada ───────────────────────────────────────
 const ENTRY_CONFIG: Record<ShiftEntryType, {
   title:     string;
@@ -102,6 +139,9 @@ export const AddDessertScreen: React.FC = () => {
   const [quantityError,      setQuantityError]        = useState('');
   const [searchQuery,        setSearchQuery]          = useState('');
 
+  // ── Unidad de registro (puede diferir de la unidad base del ingrediente) ──
+  const [selectedUnit, setSelectedUnit] = useState<UnitOfMeasure | null>(null);
+
   // ── Estado para producto nuevo (solo purchase) ────────────────────────────
   const [newName,          setNewName]          = useState('');
   const [newUnit,          setNewUnit]          = useState<UnitOfMeasure | ''>('');
@@ -122,18 +162,23 @@ export const AddDessertScreen: React.FC = () => {
   })();
 
   // ── Costo en tiempo real para usage ──────────────────────────────────────
-  const calculatedCost = selectedIngredient && entryType === 'usage'
-    ? (parseFloat(quantityUsed) || 0) * selectedIngredient.costPerUnit
-    : 0;
+  const calculatedCost = (() => {
+    if (!selectedIngredient || entryType !== 'usage') return 0;
+    const qty     = parseFloat(quantityUsed) || 0;
+    const unit    = selectedUnit ?? selectedIngredient.unit;
+    const qtyBase = convertToBase(qty, unit, selectedIngredient.unit);
+    return qtyBase * selectedIngredient.costPerUnit;
+  })();
 
   // ── Filtro de búsqueda ────────────────────────────────────────────────────
   const filteredIngredients = ingredients.filter(ing =>
     ing.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // ── Seleccionar ingrediente existente ─────────────────────────────────────
+  // ── Seleccionar ingrediente existente ───────────────────────────────────── 
   const handleSelectIngredient = (ingredient: Ingredient) => {
     setSelectedIngredient(ingredient);
+    setSelectedUnit(ingredient.unit); // por defecto la unidad base
     setQuantityUsed('');
     setQuantityError('');
     setSearchQuery('');
@@ -142,14 +187,18 @@ export const AddDessertScreen: React.FC = () => {
   // ── Validar formulario de producto existente ──────────────────────────────
   const validateExisting = (): boolean => {
     if (!selectedIngredient) return false;
-    const qty = parseFloat(quantityUsed);
+
+    const qty      = parseFloat(quantityUsed);
+    const unit     = selectedUnit ?? selectedIngredient.unit;
+    const qtyBase  = convertToBase(qty, unit, selectedIngredient.unit);
+
     if (!quantityUsed || isNaN(qty) || qty <= 0) {
       setQuantityError('Ingresa una cantidad válida');
       return false;
     }
     if (
       (entryType === 'usage' || entryType === 'output' || entryType === 'waste') &&
-      qty > selectedIngredient.quantity
+      qtyBase > selectedIngredient.quantity
     ) {
       setQuantityError(
         `Solo tienes ${formatQuantity(selectedIngredient.quantity, selectedIngredient.unit)} disponible`
@@ -192,13 +241,21 @@ export const AddDessertScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
+      const qty     = parseFloat(quantityUsed);
+      const unit    = selectedUnit ?? selectedIngredient.unit;
+      // Convertir a la unidad base para descontar del inventario correctamente
+      const qtyBase = convertToBase(qty, unit, selectedIngredient.unit);
+
+      // El costo se calcula sobre la cantidad en unidad base
+      const costAtTime = selectedIngredient.costPerUnit;
+
       const success = await addEntry({
         type:           entryType,
         ingredientId:   selectedIngredient.id,
         ingredientName: selectedIngredient.name,
-        quantityUsed:   parseFloat(quantityUsed),
+        quantityUsed:   qtyBase,   // siempre en unidad base
         unit:           selectedIngredient.unit,
-        costAtTime:     selectedIngredient.costPerUnit,
+        costAtTime,
         note:           note.trim() || undefined,
       });
 
@@ -567,8 +624,46 @@ export const AddDessertScreen: React.FC = () => {
               <Card variant="outlined" style={styles.section}>
                 <Text style={styles.sectionTitle}>Cantidad</Text>
 
+                {/* Selector de unidad si hay conversiones disponibles */}
+                {getCompatibleUnits(selectedIngredient.unit).length > 1 && (
+                  <View style={styles.unitSelector}>
+                    <Text style={styles.unitSelectorLabel}>Unidad de registro:</Text>
+                    <View style={styles.unitSelectorOptions}>
+                      {getCompatibleUnits(selectedIngredient.unit).map(unit => (
+                        <TouchableOpacity
+                          key={unit}
+                          style={[
+                            styles.unitOption,
+                            (selectedUnit ?? selectedIngredient.unit) === unit
+                              && styles.unitOptionActive,
+                          ]}
+                          onPress={() => {
+                            setSelectedUnit(unit);
+                            setQuantityUsed('');
+                            setQuantityError('');
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[
+                            styles.unitOptionText,
+                            (selectedUnit ?? selectedIngredient.unit) === unit
+                              && styles.unitOptionTextActive,
+                          ]}>
+                            {unit}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {(selectedUnit && selectedUnit !== selectedIngredient.unit) && (
+                      <Text style={styles.unitConversionHint}>
+                        Se convertirá automáticamente a {selectedIngredient.unit} para descontar del inventario
+                      </Text>
+                    )}
+                  </View>
+                )}
+
                 <Input
-                  label={`Cantidad en ${selectedIngredient.unit}`}
+                  label={`Cantidad en ${selectedUnit ?? selectedIngredient.unit}`}
                   placeholder="0"
                   value={quantityUsed}
                   onChangeText={v => {
@@ -580,7 +675,9 @@ export const AddDessertScreen: React.FC = () => {
                   keyboardType="decimal-pad"
                   autoFocus
                   rightIcon={
-                    <Text style={styles.unitSuffix}>{selectedIngredient.unit}</Text>
+                    <Text style={styles.unitSuffix}>
+                      {selectedUnit ?? selectedIngredient.unit}
+                    </Text>
                   }
                 />
 
@@ -595,7 +692,15 @@ export const AddDessertScreen: React.FC = () => {
                       </Text>
                     </View>
                     <Text style={[styles.costPreviewFormula, { color: config.color }]}>
-                      {quantityUsed} {selectedIngredient.unit}
+                      {quantityUsed} {selectedUnit ?? selectedIngredient.unit}
+                      {selectedUnit && selectedUnit !== selectedIngredient.unit
+                        ? ` = ${convertToBase(
+                            parseFloat(quantityUsed) || 0,
+                            selectedUnit,
+                            selectedIngredient.unit
+                          ).toFixed(4)} ${selectedIngredient.unit}`
+                        : ''
+                      }
                       {' × '}{formatCurrency(selectedIngredient.costPerUnit)}/{selectedIngredient.unit}
                     </Text>
                   </View>
@@ -859,5 +964,50 @@ const styles = StyleSheet.create({
 
   saveButton: {
     marginTop: Spacing.sm,
+  },
+
+  unitSelector: {
+    gap: Spacing.sm,
+  },
+
+  unitSelectorLabel: {
+    fontSize:   Typography.sm,
+    fontWeight: Typography.medium,
+    color:      Colors.textSecondary,
+  },
+
+  unitSelectorOptions: {
+    flexDirection: 'row',
+    gap:           Spacing.sm,
+  },
+
+  unitOption: {
+    paddingVertical:   Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius:      Radius.full,
+    borderWidth:       1.5,
+    borderColor:       Colors.border,
+    backgroundColor:   Colors.surface,  
+  },
+
+  unitOptionActive: {
+    backgroundColor: Colors.primary,
+    borderColor:     Colors.primary,
+  },
+
+  unitOptionText: {
+    fontSize:   Typography.sm,
+    fontWeight: Typography.semibold,
+    color:      Colors.textSecondary,
+  },
+
+  unitOptionTextActive: {
+    color: Colors.textOnPrimary,
+  },
+
+  unitConversionHint: {
+    fontSize:  Typography.xs,
+    color:     Colors.textMuted,
+    fontStyle: 'italic',
   },
 });

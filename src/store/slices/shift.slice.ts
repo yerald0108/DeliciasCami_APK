@@ -23,7 +23,7 @@ export interface ShiftSlice {
     note?:          string;
   }) => Promise<boolean>;
   removeEntry:       (entryId: string) => Promise<boolean>;
-  closeShift:        (totalRevenue: number) => Promise<boolean>;
+  closeShift: (cashRevenue: number, transferRevenue: number) => Promise<boolean>;
   clearShiftSummary: () => void;
   clearShiftError:   () => void;
   deleteShift: (shiftId: string) => Promise<boolean>;
@@ -285,81 +285,92 @@ export const createShiftSlice: StateCreator<ShiftSlice> = (set, get) => ({
 
   // ── Cerrar turno ──────────────────────────────────────────────────────────
   // El stock ya fue actualizado en tiempo real, solo calculamos el cuadre
-  closeShift: async (totalRevenue) => {
-    set({ shiftError: null });
-    try {
-      const shift = get().currentShift;
-      if (!shift) {
-        set({ shiftError: 'No hay turno abierto' });
-        return false;
-      }
-
-      const shiftRepo      = getShiftRepository();
-      const ingredientRepo = getIngredientRepository();
-
-      // ── Consolidar insumos utilizados para el resumen ─────────────────────
-      const usageMap = new Map<string, ShiftSummaryItem>();
-
-      for (const entry of shift.entries.filter(e => e.type === 'usage')) {
-        const existing = usageMap.get(entry.ingredientId);
-        if (existing) {
-          existing.totalUsed += entry.quantityUsed;
-          existing.totalCost += entry.totalCost;
-        } else {
-          usageMap.set(entry.ingredientId, {
-            ingredientId:   entry.ingredientId,
-            ingredientName: entry.ingredientName,
-            totalUsed:      entry.quantityUsed,
-            unit:           entry.unit,
-            totalCost:      entry.totalCost,
-            remainingStock: 0,
-          });
-        }
-      }
-
-      // ── Obtener stock actual de cada insumo utilizado ─────────────────────
-      for (const [ingredientId, summary] of usageMap) {
-        const result = await ingredientRepo.getById(ingredientId);
-        if (result.success && result.data) {
-          summary.remainingStock = result.data.quantity;
-        }
-      }
-
-      const totalInvested = Array.from(usageMap.values()).reduce(
-        (sum, item) => sum + item.totalCost, 0
-      );
-      const netProfit = totalRevenue - totalInvested;
-
-      // ── Cerrar en base de datos ───────────────────────────────────────────
-      const closeResult = await shiftRepo.closeShift(shift.id, totalRevenue);
-
-      if (closeResult.success && closeResult.data) {
-        const summary: ShiftSummary = {
-          shift:           closeResult.data,
-          usageSummary:    Array.from(usageMap.values()),
-          purchaseEntries: shift.entries.filter(e => e.type === 'purchase'),
-          outputEntries:   shift.entries.filter(e => e.type === 'output'),
-          wasteEntries:    shift.entries.filter(e => e.type === 'waste'),
-          totalInvested,
-          totalRevenue,
-          netProfit,
-        };
-
-        set({
-          currentShift: null,
-          shiftSummary: summary,
-          shiftHistory: [closeResult.data, ...get().shiftHistory],
-        });
-        return true;
-      }
-
-      set({ shiftError: closeResult.error ?? 'Error al cerrar turno' });
-      return false;
-    } catch (error: any) {
-      set({ shiftError: error.message });
+  closeShift: async (cashRevenue, transferRevenue) => {
+  set({ shiftError: null });
+  try {
+    const shift = get().currentShift;
+    if (!shift) {
+      set({ shiftError: 'No hay turno abierto' });
       return false;
     }
-  },
+
+    const shiftRepo      = getShiftRepository();
+    const ingredientRepo = getIngredientRepository();
+
+    // ── Cálculos financieros ──────────────────────────────────────────────
+    const totalRevenue       = cashRevenue + transferRevenue;
+    const transferCommission = transferRevenue * 0.15;
+    const fixedCosts         = totalRevenue * 0.20;
+
+    // ── Consolidar insumos utilizados para el resumen ─────────────────────
+    const usageMap = new Map<string, ShiftSummaryItem>();
+
+    for (const entry of shift.entries.filter((e: ShiftEntry) => e.type === 'usage')) {
+      const existing = usageMap.get(entry.ingredientId);
+      if (existing) {
+        existing.totalUsed += entry.quantityUsed;
+        existing.totalCost += entry.totalCost;
+      } else {
+        usageMap.set(entry.ingredientId, {
+          ingredientId:   entry.ingredientId,
+          ingredientName: entry.ingredientName,
+          totalUsed:      entry.quantityUsed,
+          unit:           entry.unit,
+          totalCost:      entry.totalCost,
+          remainingStock: 0,
+        });
+      }
+    }
+
+    // ── Obtener stock actual de cada insumo utilizado ─────────────────────
+    for (const [ingredientId, summary] of usageMap) {
+      const result = await ingredientRepo.getById(ingredientId);
+      if (result.success && result.data) {
+        summary.remainingStock = result.data.quantity;
+      }
+    }
+
+    const totalInsumos  = Array.from(usageMap.values()).reduce(
+      (sum: number, item: ShiftSummaryItem) => sum + item.totalCost, 0
+    );
+    const totalInvested = totalInsumos + transferCommission + fixedCosts;
+    const netProfit     = totalRevenue - transferCommission - fixedCosts - totalInsumos;
+
+    // ── Cerrar en base de datos ───────────────────────────────────────────
+    const closeResult = await shiftRepo.closeShift(shift.id, cashRevenue, transferRevenue);
+
+    if (closeResult.success && closeResult.data) {
+      const summary: ShiftSummary = {
+        shift:              closeResult.data,
+        usageSummary:       Array.from(usageMap.values()),
+        purchaseEntries:    shift.entries.filter((e: ShiftEntry) => e.type === 'purchase'),
+        outputEntries:      shift.entries.filter((e: ShiftEntry) => e.type === 'output'),
+        wasteEntries:       shift.entries.filter((e: ShiftEntry) => e.type === 'waste'),
+        totalInsumos,
+        transferCommission,
+        fixedCosts,
+        totalInvested,
+        cashRevenue,
+        transferRevenue,
+        totalRevenue,
+        netProfit,
+      };
+
+      set({
+        currentShift: null,
+        shiftSummary: summary,
+        shiftHistory: [closeResult.data, ...get().shiftHistory],
+      });
+      return true;
+    }
+
+    set({ shiftError: closeResult.error ?? 'Error al cerrar turno' });
+    return false;
+  } catch (error: any) {
+    set({ shiftError: error.message });
+    return false;
+  }
+},
 
   // ── Eliminar turno del historial ──────────────────────────────────────────
   deleteShift: async (shiftId) => {

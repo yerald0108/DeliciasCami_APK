@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { CREATE_TABLES_SQL, CREATE_INDEXES_SQL, MIGRATION_V2_SQL, MIGRATION_V3_SQL, DB_VERSION } from './schema';
+import { CREATE_TABLES_SQL, CREATE_INDEXES_SQL, MIGRATION_V2_SQL, MIGRATION_V3_SQL, MIGRATION_V4_SQL, DB_VERSION } from './schema';
 
 // ─── Inicializa la base de datos y ejecuta migraciones ───────────────────────
 export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
@@ -26,6 +26,11 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     if (currentVersion < 3) {
       await applyMigration_v3(db);
       await db.execAsync(`PRAGMA user_version = 3;`);
+    }
+
+    if (currentVersion < 4) {
+      await db.execAsync(MIGRATION_V4_SQL);
+      await db.execAsync(`PRAGMA user_version = 4;`);
     }
 
   } catch (error) {
