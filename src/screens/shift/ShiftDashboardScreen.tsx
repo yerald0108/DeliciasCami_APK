@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,11 +11,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, Radius, Shadows, formatCurrency, formatQuantity } from '../../constants';
+import { Colors, Typography, Spacing, Radius, Shadows, formatCurrency } from '../../constants';
 import { useCurrentShift, useIsLoadingShift, useShiftActions, useIngredientActions } from '../../store';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { EntryModal } from '../../components/shift/EntryModal';
 import { ShiftStackParams } from '../../navigation';
 import { ShiftEntry, ShiftEntryType } from '../../types';
 
@@ -30,7 +31,6 @@ const ENTRY_TYPE_CONFIG: Record<ShiftEntryType, {
   bg:          string;
   border:      string;
   icon:        string;
-  screen:      keyof ShiftStackParams;
 }> = {
   usage: {
     label:       'Utilizados',
@@ -39,7 +39,6 @@ const ENTRY_TYPE_CONFIG: Record<ShiftEntryType, {
     bg:          Colors.primaryLight,
     border:      Colors.primary,
     icon:        'tool',
-    screen:      'UsageScreen',
   },
   purchase: {
     label:       'Entradas',
@@ -48,7 +47,6 @@ const ENTRY_TYPE_CONFIG: Record<ShiftEntryType, {
     bg:          Colors.successLight,
     border:      Colors.success,
     icon:        'arrow-down-circle',
-    screen:      'PurchaseScreen',
   },
   output: {
     label:       'Salidas',
@@ -57,7 +55,6 @@ const ENTRY_TYPE_CONFIG: Record<ShiftEntryType, {
     bg:          Colors.infoLight,
     border:      Colors.info,
     icon:        'arrow-up-circle',
-    screen:      'OutputScreen',
   },
   waste: {
     label:       'Mermas',
@@ -66,7 +63,6 @@ const ENTRY_TYPE_CONFIG: Record<ShiftEntryType, {
     bg:          Colors.warningLight,
     border:      Colors.warning,
     icon:        'alert-triangle',
-    screen:      'WasteScreen',
   },
 };
 
@@ -75,6 +71,7 @@ const MovementCard: React.FC<{
   type:    ShiftEntryType;
   entries: ShiftEntry[];
   onPress: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
 }> = ({ type, entries, onPress }) => {
   const config     = ENTRY_TYPE_CONFIG[type];
   const hasEntries = entries.length > 0;
@@ -110,6 +107,9 @@ export const ShiftDashboardScreen: React.FC = () => {
   const isLoading    = useIsLoadingShift();
   const { loadOpenShift, openShift } = useShiftActions();
   const { loadIngredients } = useIngredientActions();
+
+  // ── Modal de movimientos ──────────────────────────────────────────────────
+  const [modalEntryType, setModalEntryType] = useState<ShiftEntryType | null>(null);
 
   useEffect(() => {
     loadOpenShift();
@@ -213,9 +213,7 @@ export const ShiftDashboardScreen: React.FC = () => {
               key={type}
               type={type}
               entries={entriesByType[type]}
-              onPress={() => navigation.navigate(
-                ENTRY_TYPE_CONFIG[type].screen as any
-              )}
+              onPress={() => setModalEntryType(type)}
             />
           ))}
         </View>
@@ -230,9 +228,18 @@ export const ShiftDashboardScreen: React.FC = () => {
           style={styles.closeButton}
           leftIcon={
           <Feather name="check-circle" size={18} color={Colors.textOnPrimary} />
-        } 
+        }
         />
       </ScrollView>
+
+      {/* ── Modal de movimientos ──────────────────────────────────── */}
+      {modalEntryType !== null && (
+        <EntryModal
+          visible={modalEntryType !== null}
+          entryType={modalEntryType}
+          onClose={() => setModalEntryType(null)}
+        />
+      )}
     </View>
   );
 };

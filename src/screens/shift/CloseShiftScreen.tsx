@@ -189,11 +189,6 @@ export const CloseShiftScreen: React.FC = () => {
       setTransferError('');
     }
 
-    if (cashValue === 0 && transferValue === 0) {
-      setCashError('Ingresa al menos un valor (efectivo o transferencia)');
-      ok = false;
-    }
-
     return ok;
   };
 
@@ -203,7 +198,9 @@ export const CloseShiftScreen: React.FC = () => {
 
     Alert.alert(
       'Cerrar turno',
-      `¿Confirmas cerrar el turno?\n\nEfectivo: ${formatCurrency(cashValue)}\nTransferencia: ${formatCurrency(transferValue)}\nGanancia real estimada: ${formatCurrency(gananciaReal)}`,
+      cashValue === 0 && transferValue === 0
+        ? '¿Confirmas cerrar el turno sin ventas del día?'
+        : `¿Confirmas cerrar el turno?\n\nEfectivo: ${formatCurrency(cashValue)}\nTransferencia: ${formatCurrency(transferValue)}\nGanancia real estimada: ${formatCurrency(gananciaReal)}`,
       [
         { text: 'Revisar', style: 'cancel' },
         {

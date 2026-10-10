@@ -6,19 +6,14 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius } from '../constants';
 import { useLowStockItems } from '../store';
-import { Shift, ShiftEntryType } from '../types';
+import { Shift } from '../types';
 
 // ─── Importaciones de pantallas ───────────────────────────────────────────────
 import { InventoryListScreen }        from '../screens/inventory/InventoryListScreen';
 import { IngredientFormScreen }       from '../screens/inventory/IngredientFormScreen';
 import { ShiftDashboardScreen }       from '../screens/shift/ShiftDashboardScreen';
-import { AddDessertScreen }           from '../screens/shift/AddDessertScreen';
 import { CloseShiftScreen }           from '../screens/shift/CloseShiftScreen';
 import { ShiftSummaryScreen }         from '../screens/shift/ShiftSummaryScreen';
-import { UsageScreen }                from '../screens/shift/UsageScreen';
-import { PurchaseScreen }             from '../screens/shift/PurchaseScreen';
-import { OutputScreen }               from '../screens/shift/OutputScreen';
-import { WasteScreen }                from '../screens/shift/WasteScreen';
 import { ShiftHistoryScreen }         from '../screens/history/ShiftHistoryScreen';
 import { ShiftHistoryDetailScreen }   from '../screens/history/ShiftHistoryDetailScreen';
 import { StatsScreen }                from '../screens/stats/StatsScreen';
@@ -30,14 +25,9 @@ export type InventoryStackParams = {
 };
 
 export type ShiftStackParams = {
-  ShiftDashboard:  undefined;
-  AddDessert:      { entryType: ShiftEntryType };
-  CloseShift:      undefined;
-  ShiftSummary:    undefined;
-  UsageScreen:     undefined;
-  PurchaseScreen:  undefined;
-  OutputScreen:    undefined;
-  WasteScreen:     undefined;
+  ShiftDashboard: undefined;
+  CloseShift:     undefined;
+  ShiftSummary:   undefined;
 };
 
 export type TabParams = {
@@ -67,13 +57,8 @@ function ShiftNavigator() {
   return (
     <ShiftStack.Navigator screenOptions={{ headerShown: false }}>
       <ShiftStack.Screen name="ShiftDashboard" component={ShiftDashboardScreen} />
-      <ShiftStack.Screen name="AddDessert"     component={AddDessertScreen}     />
       <ShiftStack.Screen name="CloseShift"     component={CloseShiftScreen}     />
       <ShiftStack.Screen name="ShiftSummary"   component={ShiftSummaryScreen}   />
-      <ShiftStack.Screen name="UsageScreen"    component={UsageScreen}          />
-      <ShiftStack.Screen name="PurchaseScreen" component={PurchaseScreen}       />
-      <ShiftStack.Screen name="OutputScreen"   component={OutputScreen}         />
-      <ShiftStack.Screen name="WasteScreen"    component={WasteScreen}          />
     </ShiftStack.Navigator>
   );
 }
