@@ -5,10 +5,10 @@ import { getIngredientRepository } from '../../database';
 // ─── Estado y acciones del slice de ingredientes ──────────────────────────────
 export interface IngredientSlice {
   // Estado
-  ingredients:     Ingredient[];
-  lowStockItems:   Ingredient[];
+  ingredients:          Ingredient[];
+  lowStockItems:        Ingredient[];
   isLoadingIngredients: boolean;
-  ingredientError: string | null;
+  ingredientError:      string | null;
 
   // Acciones
   loadIngredients:   () => Promise<void>;
@@ -17,6 +17,10 @@ export interface IngredientSlice {
   deleteIngredient:  (id: string) => Promise<boolean>;
   checkLowStock:     () => Promise<void>;
   clearIngredientError: () => void;
+
+  // ── Acciones cruzadas (consumidas por otros slices) ───────────────────────
+  // ──  No usar directamente desde componentes UI. Son para uso entre slices.
+  updateIngredientInStore: (updated: Ingredient) => void;
 }
 
 // ─── Implementación del slice ─────────────────────────────────────────────────
@@ -134,4 +138,15 @@ export const createIngredientSlice: StateCreator<IngredientSlice> = (set, get) =
 
   // ── Limpiar error ─────────────────────────────────────────────────────────
   clearIngredientError: () => set({ ingredientError: null }),
+
+  // ── Actualizar un ingrediente en el store (uso cruzado) ───────────────────
+  // Reemplaza el ingrediente por su versión actualizada, sin tocar el repo.
+  // Pensado para que shift.slice lo llame después de modificar el stock.
+  updateIngredientInStore: (updated) => {
+    set(state => ({
+      ingredients: state.ingredients.map(ing =>
+        ing.id === updated.id ? updated : ing
+      ),
+    }));
+  },
 });
