@@ -31,6 +31,7 @@ import {
   useAppStore,
   useCurrentShift,
 } from '../../store';
+import { useConfirm } from '../../hooks';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -153,6 +154,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({ visible, onClose, entryT
   const currentShift = useCurrentShift();
   const { addEntry, removeEntry }          = useShiftActions();
   const { createIngredient, loadIngredients } = useIngredientActions();
+  const confirm = useConfirm();
 
   // ── Vista actual ────────────────────────────────────────────────────────────
   const [view, setView] = useState<ModalView>('list');
@@ -394,19 +396,18 @@ export const EntryModal: React.FC<EntryModalProps> = ({ visible, onClose, entryT
   };
 
   // ── Eliminar entrada ─────────────────────────────────────────────────────────
-  const handleRemove = (entry: ShiftEntry) => {
-    Alert.alert(
-      'Quitar registro',
-      `¿Quitar "${entry.ingredientName}" del turno?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text:    'Quitar',
-          style:   'destructive',
-          onPress: () => removeEntry(entry.id),
-        },
-      ]
-    );
+  const handleRemove = async (entry: ShiftEntry) => {
+    const ok = await confirm({
+      title:       'Quitar registro',
+      message:     `¿Querés quitar "${entry.ingredientName}" del turno?`,
+      confirmText: 'Quitar',
+      cancelText:  'Cancelar',
+      variant:     'danger',
+    });
+
+    if (!ok) return;
+
+    await removeEntry(entry.id);
   };
 
   // ─── Vista Lista ─────────────────────────────────────────────────────────────
