@@ -16,7 +16,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "backgroundColor": "#EDE0D8"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.yeraldagf.DeliciasCami"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -24,6 +25,11 @@
     "plugins": [
       "expo-sqlite",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "84b05f57-6c38-4b65-9f19-0ccb06ed2823"
+      }
+    }
   }
 }

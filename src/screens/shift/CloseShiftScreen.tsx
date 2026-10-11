@@ -164,7 +164,7 @@ export const CloseShiftScreen: React.FC = () => {
   const totalBruto    = cashValue + transferValue;
 
   const comisionTransfer = transferValue * 0.15;
-  const gastosFijos      = totalBruto   * 0.20;
+  const gastosFijos      = totalBruto   * 0.05;
   const totalInsumos     = usageEntries.reduce((s, e) => s + e.totalCost, 0);
   const totalInvertido   = totalInsumos + comisionTransfer + gastosFijos;
   const gananciaReal     = totalBruto - comisionTransfer - gastosFijos - totalInsumos;
@@ -376,7 +376,7 @@ export const CloseShiftScreen: React.FC = () => {
               signo="− "
             />
             <DesgloseFila
-              label="Gastos fijos (20%)"
+              label="Gastos fijos (5%)"
               value={gastosFijos}
               color={Colors.error}
               hint="Agua, luz, gas, etc."

@@ -529,7 +529,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({ visible, onClose, entryT
   const renderFormView = () => (
     <KeyboardAvoidingView
       style={styles.viewContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* Encabezado formulario */}
       <View style={[styles.modalHeader, { borderBottomColor: config.color + '33' }]}>
@@ -1147,7 +1147,7 @@ const styles = StyleSheet.create({
   formScrollContent: {
     padding:       Spacing.base,
     gap:           Spacing.md,
-    paddingBottom: Spacing.xxxl,
+    paddingBottom: 120,
   },
 
   infoBanner: {
