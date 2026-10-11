@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadows, formatCurrency } from '../../constants';
 import { useShiftHistory, useIsLoadingShift, useShiftActions } from '../../store';
+import { useConfirm } from '../../hooks';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -51,7 +52,7 @@ const ShiftHistoryCard: React.FC<{
 
   return (
     <Card variant="elevated" style={styles.card}>
-      {/* ── Encabezado ────────────────────────────────────────────── */}
+      {/* ── Encabezado ──────────────────────────────────────────────── */}
       <View style={styles.cardHeader}>
         <View style={styles.cardDateWrapper}>
           <Text style={styles.cardDate}>{date}</Text>
@@ -75,7 +76,7 @@ const ShiftHistoryCard: React.FC<{
         </View>
       </View>
 
-      {/* ── Métricas ──────────────────────────────────────────────── */}
+      {/* ── Métricas ────────────────────────────────────────────────── */}
       <View style={styles.cardMetrics}>
         <View style={styles.metric}>
           <Text style={styles.metricLabel}>Recaudado</Text>
@@ -105,7 +106,7 @@ const ShiftHistoryCard: React.FC<{
         </View>
       </View>
 
-      {/* ── Footer ────────────────────────────────────────────────── */}
+      {/* ── Footer ──────────────────────────────────────────────────── */}
       <TouchableOpacity
         style={styles.cardFooter}
         onPress={onPress}
@@ -134,6 +135,7 @@ export const ShiftHistoryScreen: React.FC<ShiftHistoryScreenProps> = ({
   const shiftHistory = useShiftHistory();
   const isLoading    = useIsLoadingShift();
   const { loadShiftHistory, deleteShift } = useShiftActions();
+  const confirm      = useConfirm();
 
   useEffect(() => {
     loadShiftHistory();
@@ -145,35 +147,32 @@ export const ShiftHistoryScreen: React.FC<ShiftHistoryScreenProps> = ({
   const totalProfit   = shiftHistory.reduce((s, t) => s + t.netProfit,     0);
 
   // ── Eliminar turno ────────────────────────────────────────────────────────
-  const handleDelete = (shift: Shift) => {
+  const handleDelete = async (shift: Shift) => {
     const date = new Date(shift.openedAt).toLocaleDateString('es-ES', {
       day:   'numeric',
       month: 'long',
       year:  'numeric',
     });
 
-    Alert.alert(
-      'Eliminar turno',
-      `¿Seguro que quieres eliminar el turno del ${date}? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text:    'Eliminar',
-          style:   'destructive',
-          onPress: async () => {
-            const success = await deleteShift(shift.id);
-            if (!success) {
-              Alert.alert('Error', 'No se pudo eliminar el turno. Intenta de nuevo.');
-            }
-          },
-        },
-      ]
-    );
+    const ok = await confirm({
+      title:       'Eliminar turno',
+      message:     `¿Seguro que querés eliminar el turno del ${date}? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      cancelText:  'Cancelar',
+      variant:     'danger',
+    });
+
+    if (!ok) return;
+
+    const success = await deleteShift(shift.id);
+    if (!success) {
+      Alert.alert('Error', 'No se pudo eliminar el turno. Intenta de nuevo.');
+    }
   };
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
-      {/* ── Encabezado ──────────────────────────────────────────────── */}
+      {/* ── Encabezado ────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <View>
           <Text style={styles.headerTitle}>Historial</Text>
