@@ -29,7 +29,7 @@ export async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     }
 
     if (currentVersion < 4) {
-      await db.execAsync(MIGRATION_V4_SQL);
+      await applyMigration_v4(db);
       await db.execAsync(`PRAGMA user_version = 4;`);
     }
 
@@ -78,6 +78,31 @@ async function applyMigration_v2(db: SQLite.SQLiteDatabase): Promise<void> {
   }
 
   console.log('[DB] Migración v2 completada.');
+}
+
+// ─── Migración v4: agregar columnas de ingresos y costos a shifts ─────────────
+async function applyMigration_v4(db: SQLite.SQLiteDatabase): Promise<void> {
+  console.log('[DB] Aplicando migración v4...');
+
+  const tableInfo = await db.getAllAsync<{ name: string }>(
+    `PRAGMA table_info(shifts);`
+  );
+  const columnNames = tableInfo.map(col => col.name);
+
+  if (!columnNames.includes('cash_revenue')) {
+    await db.execAsync(`ALTER TABLE shifts ADD COLUMN cash_revenue REAL NOT NULL DEFAULT 0;`);
+  }
+  if (!columnNames.includes('transfer_revenue')) {
+    await db.execAsync(`ALTER TABLE shifts ADD COLUMN transfer_revenue REAL NOT NULL DEFAULT 0;`);
+  }
+  if (!columnNames.includes('transfer_commission')) {
+    await db.execAsync(`ALTER TABLE shifts ADD COLUMN transfer_commission REAL NOT NULL DEFAULT 0;`);
+  }
+  if (!columnNames.includes('fixed_costs')) {
+    await db.execAsync(`ALTER TABLE shifts ADD COLUMN fixed_costs REAL NOT NULL DEFAULT 0;`);
+  }
+
+  console.log('[DB] Migración v4 completada.');
 }
 
 // ─── Migración v3: agregar type y note a shift_entries ───────────────────────
