@@ -24,6 +24,7 @@ import {
   FIXED_COSTS_PCT,
 } from '../../constants';
 import { useCurrentShift, useShiftActions } from '../../store';
+import { useConfirm } from '../../hooks';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -154,6 +155,7 @@ export const CloseShiftScreen: React.FC = () => {
   const navigation   = useNavigation<NavigationProp>();
   const currentShift = useCurrentShift();
   const { closeShift } = useShiftActions();
+  const confirm = useConfirm();
 
   const [cashRevenue,     setCashRevenue]     = useState('');
   const [transferRevenue, setTransferRevenue] = useState('');
@@ -207,32 +209,32 @@ export const CloseShiftScreen: React.FC = () => {
   const handleClose = async () => {
     if (!validate()) return;
 
-    Alert.alert(
-      'Cerrar turno',
-      cashValue === 0 && transferValue === 0
-        ? '¿Confirmas cerrar el turno sin ventas del día?'
-        : `¿Confirmas cerrar el turno?\n\nEfectivo: ${formatCurrency(cashValue)}\nTransferencia: ${formatCurrency(transferValue)}\nGanancia real estimada: ${formatCurrency(gananciaReal)}`,
-      [
-        { text: 'Revisar', style: 'cancel' },
-        {
-          text:    'Cerrar y calcular',
-          style:   'default',
-          onPress: async () => {
-            setIsLoading(true);
-            try {
-              const success = await closeShift(cashValue, transferValue);
-              if (success) {
-                navigation.replace('ShiftSummary');
-              } else {
-                Alert.alert('Error', 'No se pudo cerrar el turno. Intenta de nuevo.');
-              }
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    const message = cashValue === 0 && transferValue === 0
+      ? '¿Confirmas cerrar el turno sin ventas del día?'
+      : `¿Confirmas cerrar el turno?\n\nEfectivo: ${formatCurrency(cashValue)}\nTransferencia: ${formatCurrency(transferValue)}\nGanancia real estimada: ${formatCurrency(gananciaReal)}`;
+
+    const ok = await confirm({
+      title:       'Cerrar turno',
+      message,
+      confirmText: 'Cerrar y calcular',
+      cancelText:  'Revisar',
+      variant:     'warning',
+      icon:        'check-circle',
+    });
+
+    if (!ok) return;
+
+    setIsLoading(true);
+    try {
+      const success = await closeShift(cashValue, transferValue);
+      if (success) {
+        navigation.replace('ShiftSummary');
+      } else {
+        Alert.alert('Error', 'No se pudo cerrar el turno. Intenta de nuevo.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
