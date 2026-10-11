@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { initDatabase } from './src/database';
 import { AppNavigator } from './src/navigation';
+import { ConfirmProvider } from './src/hooks';
 import { Colors, Typography, Spacing } from './src/constants';
 
 // ─── Pantalla de carga inicial ────────────────────────────────────────────────
@@ -33,8 +34,8 @@ function ErrorScreen({ message }: { message: string }) {
 
 // ─── App principal ────────────────────────────────────────────────────────────
 export default function App() {
-  const [isReady, setIsReady]   = useState(false);
-  const [error,   setError]     = useState<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => {
     async function bootstrap() {
@@ -51,9 +52,14 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      {error    ? <ErrorScreen message={error} /> :
-       !isReady ? <SplashScreen /> :
-                  <AppNavigator />}
+
+      {/* ConfirmProvider envuelve TODO el árbol para que useConfirm() funcione
+          en cualquier pantalla. Monta el ConfirmDialog una sola vez. */}
+      <ConfirmProvider>
+        {error    ? <ErrorScreen message={error} /> :
+         !isReady ? <SplashScreen /> :
+                    <AppNavigator />}
+      </ConfirmProvider>
     </SafeAreaProvider>
   );
 }
