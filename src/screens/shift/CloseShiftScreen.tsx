@@ -11,7 +11,18 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, Radius, formatCurrency, formatQuantity } from '../../constants';
+import {
+  Colors,
+  Typography,
+  Spacing,
+  Radius,
+  formatCurrency,
+  formatQuantity,
+  TRANSFER_COMMISSION_RATE,
+  FIXED_COSTS_RATE,
+  TRANSFER_COMMISSION_PCT,
+  FIXED_COSTS_PCT,
+} from '../../constants';
 import { useCurrentShift, useShiftActions } from '../../store';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
 import { Input } from '../../components/ui/Input';
@@ -158,13 +169,13 @@ export const CloseShiftScreen: React.FC = () => {
   const outputEntries   = currentShift.entries.filter(e => e.type === 'output');
   const wasteEntries    = currentShift.entries.filter(e => e.type === 'waste');
 
-  // ── Cálculos en tiempo real ───────────────────────────────────────────────
+  // ── Cálculos en tiempo real (tasas centralizadas en constants/business) ──
   const cashValue     = parseFloat(cashRevenue)     || 0;
   const transferValue = parseFloat(transferRevenue) || 0;
   const totalBruto    = cashValue + transferValue;
 
-  const comisionTransfer = transferValue * 0.15;
-  const gastosFijos      = totalBruto   * 0.05;
+  const comisionTransfer = transferValue * TRANSFER_COMMISSION_RATE;
+  const gastosFijos      = totalBruto    * FIXED_COSTS_RATE;
   const totalInsumos     = usageEntries.reduce((s, e) => s + e.totalCost, 0);
   const totalInvertido   = totalInsumos + comisionTransfer + gastosFijos;
   const gananciaReal     = totalBruto - comisionTransfer - gastosFijos - totalInsumos;
@@ -325,7 +336,7 @@ export const CloseShiftScreen: React.FC = () => {
             }}
             error={transferError}
             keyboardType="decimal-pad"
-            hint="Monto total cobrado por transferencia (ya incluye el 15% de comisión)"
+            hint={`Monto total cobrado por transferencia (ya incluye el ${TRANSFER_COMMISSION_PCT}% de comisión)`}
             leftIcon={<Text style={styles.currencyPrefix}>$</Text>}
           />
 
@@ -333,7 +344,7 @@ export const CloseShiftScreen: React.FC = () => {
             <View style={styles.commissionNote}>
               <Feather name="info" size={13} color={Colors.warning} />
               <Text style={styles.commissionNoteText}>
-                Se descontará {formatCurrency(comisionTransfer)} (15%) por costo de extracción de transferencia
+                Se descontará {formatCurrency(comisionTransfer)} ({TRANSFER_COMMISSION_PCT}%) por costo de extracción de transferencia
               </Text>
             </View>
           )}
@@ -369,14 +380,14 @@ export const CloseShiftScreen: React.FC = () => {
             />
             <View style={styles.desgloseSeparator} />
             <DesgloseFila
-              label="Comisión transferencia (15%)"
+              label={`Comisión transferencia (${TRANSFER_COMMISSION_PCT}%)`}
               value={comisionTransfer}
               color={Colors.error}
               hint="Costo de extraer el dinero"
               signo="− "
             />
             <DesgloseFila
-              label="Gastos fijos (5%)"
+              label={`Gastos fijos (${FIXED_COSTS_PCT}%)`}
               value={gastosFijos}
               color={Colors.error}
               hint="Agua, luz, gas, etc."

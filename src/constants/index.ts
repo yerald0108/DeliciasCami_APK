@@ -151,3 +151,6 @@ export function formatCurrency(amount: number): string {
 export function formatQuantity(quantity: number, unit: string): string {
   return `${quantity % 1 === 0 ? quantity.toFixed(0) : quantity.toFixed(2)} ${unit}`;
 }
+
+// ─── Reglas de negocio ────────────────────────────────────────────────────────
+export * from './business';

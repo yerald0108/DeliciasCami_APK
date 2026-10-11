@@ -43,8 +43,8 @@ export interface Shift {
   totalRevenue:        number;   // efectivo + transferencia (bruto)
   cashRevenue:         number;   // dinero recibido en efectivo
   transferRevenue:     number;   // dinero recibido en transferencia
-  transferCommission:  number;   // 15% de transferRevenue (costo extracción)
-  fixedCosts:          number;   // 20% del total bruto (agua, luz, etc.)
+  transferCommission:  number;   // TRANSFER_COMMISSION_RATE (15%) de transferRevenue
+  fixedCosts:          number;   // FIXED_COSTS_RATE (5%) del total bruto
   totalInvested:       number;   // insumos + commission + fixedCosts
   netProfit:           number;   // ganancia real
   openedAt:            string;

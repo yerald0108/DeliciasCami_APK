@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 import { Shift, ShiftEntry, ShiftEntryType, DbResult, ShiftStatus, UnitOfMeasure } from '../../types';
+import { TRANSFER_COMMISSION_RATE, FIXED_COSTS_RATE } from '../../constants';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function generateId(): string {
@@ -209,11 +210,11 @@ export class ShiftRepository {
       // ── Total bruto recaudado ─────────────────────────────────────────────
       const totalRevenue = cashRevenue + transferRevenue;
 
-      // ── Costo de extracción: 15% de lo cobrado por transferencia ─────────
-      const transferCommission = transferRevenue * 0.15;
+      // ── Costo de extracción sobre transferencias ──────────────────────────
+      const transferCommission = transferRevenue * TRANSFER_COMMISSION_RATE;
 
-      // ── Gastos fijos: 20% del total bruto ────────────────────────────────
-      const fixedCosts = totalRevenue * 0.20;
+      // ── Gastos fijos sobre el total bruto ────────────────────────────────
+      const fixedCosts = totalRevenue * FIXED_COSTS_RATE;
 
       // ── Inversión en insumos (solo entries de tipo 'usage') ───────────────
       const totalInsumos = shift.entries
