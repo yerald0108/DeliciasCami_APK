@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   TextInput,
   ActivityIndicator,
   Dimensions,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -27,6 +29,11 @@ import { Card } from '../../components/ui/Card';
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH  = SCREEN_WIDTH - Spacing.base * 2 - Spacing.base * 2;
+
+// ─── Animación del modal ──────────────────────────────────────────────────────
+const MODAL_ANIM_DURATION_OPEN  = 250;
+const MODAL_ANIM_DURATION_CLOSE = 200;
+const MODAL_SHEET_OFFSET        = 400; // px desde abajo al abrir
 
 // ─── Configuración de períodos ────────────────────────────────────────────────
 const PERIOD_OPTIONS: { label: string; value: StatsPeriod }[] = [
@@ -82,16 +89,64 @@ export const StatsScreen: React.FC = () => {
   const [customStart,     setCustomStart]     = useState('');
   const [customEnd,       setCustomEnd]       = useState('');
 
+  // ── Animación del modal ───────────────────────────────────────────────────
+  const overlayAnim = useRef(new Animated.Value(0)).current;
+  const sheetAnim   = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     loadStats('today');
   }, []);
+
+  // ── Abrir modal con animación ─────────────────────────────────────────────
+  const openModal = () => {
+    setShowCustomModal(true);
+    Animated.parallel([
+      Animated.timing(overlayAnim, {
+        toValue:         1,
+        duration:        MODAL_ANIM_DURATION_OPEN,
+        easing:          Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetAnim, {
+        toValue:         1,
+        duration:        MODAL_ANIM_DURATION_OPEN,
+        easing:          Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  // ── Cerrar modal con animación ────────────────────────────────────────────
+  const closeModal = () => {
+    Animated.parallel([
+      Animated.timing(overlayAnim, {
+        toValue:         0,
+        duration:        MODAL_ANIM_DURATION_CLOSE,
+        easing:          Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetAnim, {
+        toValue:         0,
+        duration:        MODAL_ANIM_DURATION_CLOSE,
+        easing:          Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setShowCustomModal(false);
+        // Reset para la próxima apertura
+        overlayAnim.setValue(0);
+        sheetAnim.setValue(0);
+      }
+    });
+  };
 
   // ── Aplicar rango personalizado ───────────────────────────────────────────
   const handleApplyCustomRange = () => {
     if (!customStart || !customEnd) return;
     const range: DateRange = { startDate: customStart, endDate: customEnd };
     setCustomRange(range);
-    setShowCustomModal(false);
+    closeModal();
   };
 
   // ── Formatear fecha para label ────────────────────────────────────────────
@@ -195,7 +250,7 @@ export const StatsScreen: React.FC = () => {
             ]}
             onPress={() => {
               if (opt.value === 'custom') {
-                setShowCustomModal(true);
+                openModal();
               } else {
                 setStatsPeriod(opt.value);
               }
@@ -481,19 +536,46 @@ export const StatsScreen: React.FC = () => {
         </ScrollView>
       )}
 
-      {/* ── Modal rango personalizado ──────────────────────────────────── */}
+      {/* ── Modal rango personalizado (animado) ────────────────────────── */}
       <Modal
         visible={showCustomModal}
         transparent
-        animationType="slide"
-        onRequestClose={() => setShowCustomModal(false)}
+        animationType="none"
+        onRequestClose={closeModal}
+        statusBarTranslucent
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+        {/* Overlay animado */}
+        <Animated.View
+          style={[
+            styles.modalOverlay,
+            { opacity: overlayAnim },
+          ]}
+        >
+          {/* Cerrar tocando fuera del sheet */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={closeModal}
+          />
+
+          {/* Sheet animado */}
+          <Animated.View
+            style={[
+              styles.modalSheet,
+              {
+                transform: [{
+                  translateY: sheetAnim.interpolate({
+                    inputRange:  [0, 1],
+                    outputRange: [MODAL_SHEET_OFFSET, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Rango personalizado</Text>
               <TouchableOpacity
-                onPress={() => setShowCustomModal(false)}
+                onPress={closeModal}
                 style={styles.modalClose}
               >
                 <Feather name="x" size={20} color={Colors.textSecondary} />
@@ -533,7 +615,7 @@ export const StatsScreen: React.FC = () => {
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.modalCancelButton}
-                onPress={() => setShowCustomModal(false)}
+                onPress={closeModal}
                 activeOpacity={0.8}
               >
                 <Text style={styles.modalCancelText}>Cancelar</Text>
@@ -550,8 +632,8 @@ export const StatsScreen: React.FC = () => {
                 <Text style={styles.modalApplyText}>Aplicar</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </View>
   );
