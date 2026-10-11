@@ -14,6 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, Radius, Shadows, formatCurrency, formatQuantity, UNIT_LABELS } from '../../constants';
 import { useIngredients, useLowStockItems, useIsLoadingIngredients, useIngredientActions } from '../../store';
+import { useConfirm } from '../../hooks';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -23,7 +24,7 @@ import { Ingredient } from '../../types';
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type NavigationProp = NativeStackNavigationProp<InventoryStackParams, 'InventoryList'>;
 
-// ─── Componente de fila de ingrediente ───────────────────────────────────────
+// ─── Componente de fila de ingrediente ────────────────────────────────────────
 const IngredientRow: React.FC<{
   ingredient: Ingredient;
   isLowStock: boolean;
@@ -98,6 +99,7 @@ export const InventoryListScreen: React.FC = () => {
   const lowStockItems = useLowStockItems();
   const isLoading     = useIsLoadingIngredients();
   const { loadIngredients, deleteIngredient } = useIngredientActions();
+  const confirm       = useConfirm();
 
   const lowStockIds = new Set(lowStockItems.map(i => i.id));
 
@@ -105,32 +107,29 @@ export const InventoryListScreen: React.FC = () => {
     loadIngredients();
   }, []);
 
-  const handleDelete = useCallback((ingredient: Ingredient) => {
-    Alert.alert(
-      'Eliminar insumo',
-      `¿Seguro que quieres eliminar "${ingredient.name}"? Esta acción no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text:    'Eliminar',
-          style:   'destructive',
-          onPress: async () => {
-            const success = await deleteIngredient(ingredient.id);
-            if (!success) {
-              Alert.alert(
-                'No se puede eliminar',
-                `"${ingredient.name}" fue usado en uno o más turnos. Solo puedes eliminar insumos que no hayan sido utilizados.`
-              );
-            }
-          },
-        },
-      ]
-    );
-  }, [deleteIngredient]);
+  const handleDelete = useCallback(async (ingredient: Ingredient) => {
+    const ok = await confirm({
+      title:       'Eliminar insumo',
+      message:     `¿Seguro que querés eliminar "${ingredient.name}"? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      cancelText:  'Cancelar',
+      variant:     'danger',
+    });
+
+    if (!ok) return;
+
+    const success = await deleteIngredient(ingredient.id);
+    if (!success) {
+      Alert.alert(
+        'No se puede eliminar',
+        `"${ingredient.name}" fue usado en uno o más turnos. Solo puedes eliminar insumos que no hayan sido utilizados.`
+      );
+    }
+  }, [deleteIngredient, confirm]);
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
-      {/* ── Encabezado ──────────────────────────────────────────────────── */}
+      {/* ── Encabezado ────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <View>
           <Text style={styles.headerTitle}>Inventario</Text>
@@ -157,7 +156,7 @@ export const InventoryListScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* ── Lista ───────────────────────────────────────────────────────── */}
+      {/* ── Lista ────────────────────────────────────────────────────── */}
       <FlatList
         data={ingredients}
         keyExtractor={item => item.id}
