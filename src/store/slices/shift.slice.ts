@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import { Shift, ShiftEntry, ShiftEntryType, ShiftSummary, ShiftSummaryItem, UnitOfMeasure } from '../../types';
 import { getShiftRepository, getIngredientRepository } from '../../database';
 import { TRANSFER_COMMISSION_RATE, FIXED_COSTS_RATE } from '../../constants';
+import type { IngredientSliceState } from '../types';
 
 // ─── Estado y acciones del slice de turnos ────────────────────────────────────
 export interface ShiftSlice {
@@ -31,7 +32,12 @@ export interface ShiftSlice {
 }
 
 // ─── Implementación ───────────────────────────────────────────────────────────
-export const createShiftSlice: StateCreator<ShiftSlice> = (set, get) => ({
+export const createShiftSlice: StateCreator<
+  ShiftSlice & IngredientSliceState,
+  [],
+  [],
+  ShiftSlice
+> = (set, get) => ({
   currentShift:   null,
   shiftHistory:   [],
   shiftSummary:   null,
@@ -117,66 +123,61 @@ export const createShiftSlice: StateCreator<ShiftSlice> = (set, get) => ({
       let updatedIngredient = null;
 
       switch (input.type) {
-        case 'usage':
+        case 'usage': {
           const usageResult = await ingredientRepo.decreaseStock(
             input.ingredientId,
             input.quantityUsed
           );
           if (usageResult.success) updatedIngredient = usageResult.data;
           break;
+        }
 
-        case 'purchase':
+        case 'purchase': {
           const purchaseResult = await ingredientRepo.increaseStock(
             input.ingredientId,
             input.quantityUsed
           );
           if (purchaseResult.success) updatedIngredient = purchaseResult.data;
           break;
+        }
 
-        case 'output':
+        case 'output': {
           const outputResult = await ingredientRepo.decreaseStock(
             input.ingredientId,
             input.quantityUsed
           );
           if (outputResult.success) updatedIngredient = outputResult.data;
           break;
+        }
 
-        case 'waste':
+        case 'waste': {
           const wasteResult = await ingredientRepo.decreaseStock(
             input.ingredientId,
             input.quantityUsed
           );
           if (wasteResult.success) updatedIngredient = wasteResult.data;
           break;
+        }
       }
 
-      // ── Actualizar el store de ingredientes en tiempo real ────────────────
-      if (updatedIngredient) {
-        set(state => ({
-          currentShift: state.currentShift
-            ? {
-                ...state.currentShift,
-                entries: [...state.currentShift.entries, result.data!],
-              }
-            : null,
-          ingredients: (state as any).ingredients?.map((ing: any) =>
-            ing.id === updatedIngredient!.id ? updatedIngredient : ing
-          ) ?? (state as any).ingredients,
-        }));
+      // ── 1. Actualizar el turno (siempre) ─────────────────────────────────
+      set(state => ({
+        currentShift: state.currentShift
+          ? {
+              ...state.currentShift,
+              entries: [...state.currentShift.entries, result.data!],
+            }
+          : null,
+      }));
 
-        const lowStockResult = await ingredientRepo.getLowStock();
-        if (lowStockResult.success && lowStockResult.data) {
-          set({ lowStockItems: lowStockResult.data } as any);
-        }
-      } else {
-        set(state => ({
-          currentShift: state.currentShift
-            ? {
-                ...state.currentShift,
-                entries: [...state.currentShift.entries, result.data!],
-              }
-            : null,
-        }));
+      // ── 2. Actualizar el ingrediente en el store (delegando al slice) ────
+      if (updatedIngredient) {
+        get().updateIngredientInStore(updatedIngredient);
+      }
+
+      // ── 3. Refrescar alertas de stock bajo ───────────────────────────────
+      if (updatedIngredient) {
+        await get().checkLowStock();
       }
 
       return true;
@@ -193,6 +194,7 @@ export const createShiftSlice: StateCreator<ShiftSlice> = (set, get) => ({
       const shift = get().currentShift;
       if (!shift) return false;
 
+      // Buscar la entrada antes de eliminarla para revertir el stock
       const entry = shift.entries.find(e => e.id === entryId);
 
       const shiftRepo      = getShiftRepository();
@@ -205,44 +207,50 @@ export const createShiftSlice: StateCreator<ShiftSlice> = (set, get) => ({
         return false;
       }
 
+      // ── Revertir el stock según el tipo de entrada eliminada ──────────────
       let updatedIngredient = null;
 
       if (entry) {
         switch (entry.type) {
-          case 'usage':
+          case 'usage': {
             const revertUsage = await ingredientRepo.increaseStock(
               entry.ingredientId,
               entry.quantityUsed
             );
             if (revertUsage.success) updatedIngredient = revertUsage.data;
             break;
+          }
 
-          case 'purchase':
+          case 'purchase': {
             const revertPurchase = await ingredientRepo.decreaseStock(
               entry.ingredientId,
               entry.quantityUsed
             );
             if (revertPurchase.success) updatedIngredient = revertPurchase.data;
             break;
+          }
 
-          case 'output':
+          case 'output': {
             const revertOutput = await ingredientRepo.increaseStock(
               entry.ingredientId,
               entry.quantityUsed
             );
             if (revertOutput.success) updatedIngredient = revertOutput.data;
             break;
+          }
 
-          case 'waste':
+          case 'waste': {
             const revertWaste = await ingredientRepo.increaseStock(
               entry.ingredientId,
               entry.quantityUsed
             );
             if (revertWaste.success) updatedIngredient = revertWaste.data;
             break;
+          }
         }
       }
 
+      // ── 1. Actualizar el turno (siempre) ─────────────────────────────────
       set(state => ({
         currentShift: state.currentShift
           ? {
@@ -250,18 +258,14 @@ export const createShiftSlice: StateCreator<ShiftSlice> = (set, get) => ({
               entries: state.currentShift.entries.filter(e => e.id !== entryId),
             }
           : null,
-        ...(updatedIngredient ? {
-          ingredients: (state as any).ingredients?.map((ing: any) =>
-            ing.id === updatedIngredient!.id ? updatedIngredient : ing
-          ) ?? (state as any).ingredients,
-        } : {}),
       }));
 
+      // ── 2. Actualizar el ingrediente en el store (delegando al slice) ────
       if (updatedIngredient) {
-        const lowStockResult = await ingredientRepo.getLowStock();
-        if (lowStockResult.success && lowStockResult.data) {
-          set({ lowStockItems: lowStockResult.data } as any);
-        }
+        get().updateIngredientInStore(updatedIngredient);
+
+        // ── 3. Refrescar alertas de stock bajo ─────────────────────────────
+        await get().checkLowStock();
       }
 
       return true;

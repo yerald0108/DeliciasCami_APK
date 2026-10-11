@@ -6,8 +6,13 @@ import type { Ingredient, Shift, ShiftSummary } from '../types';
 
 /** Lo que shift.slice necesita ver del ingredient.slice. */
 export interface IngredientSliceState {
+  // ── Estado ────────────────────────────────────────────────────────────
   ingredients:   Ingredient[];
   lowStockItems: Ingredient[];
+
+  // ── Acciones consumidas por otros slices ──────────────────────────────
+  updateIngredientInStore: (updated: Ingredient) => void;
+  checkLowStock:           () => Promise<void>;
 }
 
 /** Lo que stats.slice necesita ver del shift.slice. */
