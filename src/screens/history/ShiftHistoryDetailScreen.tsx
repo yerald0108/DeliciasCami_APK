@@ -1,116 +1,48 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, Radius, formatCurrency, formatQuantity } from '../../constants';
+import {
+  Colors,
+  Typography,
+  Spacing,
+  Radius,
+  formatCurrency,
+  formatQuantity,
+  TRANSFER_COMMISSION_PCT,
+  FIXED_COSTS_PCT,
+} from '../../constants';
 import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
-import { Shift, ShiftEntry, ShiftEntryType } from '../../types';
+import { Shift } from '../../types';
 
-// ─── Props ────────────────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 interface ShiftHistoryDetailScreenProps {
   shift:  Shift;
   onBack: () => void;
 }
 
-// ─── Configuración visual por tipo ───────────────────────────────────────────
-const TYPE_CONFIG: Record<ShiftEntryType, {
-  label: string;
-  color: string;
-  bg:    string;
-  icon:  string;
-}> = {
-  usage: {
-    label: 'Insumos utilizados',
-    color: Colors.primary,
-    bg:    Colors.primaryLight,
-    icon:  'tool',
-  },
-  purchase: {
-    label: 'Entradas / Compras',
-    color: Colors.success,
-    bg:    Colors.successLight,
-    icon:  'arrow-down-circle',
-  },
-  output: {
-    label: 'Salidas',
-    color: Colors.info,
-    bg:    Colors.infoLight,
-    icon:  'arrow-up-circle',
-  },
-  waste: {
-    label: 'Mermas',
-    color: Colors.warning,
-    bg:    Colors.warningLight,
-    icon:  'alert-triangle',
-  },
-};
+// ─── Constantes ───────────────────────────────────────────────────────────────
+const MAX_VISIBLE_INGREDIENTS = 5;
+const LOW_MARGIN_THRESHOLD    = 30; // % mínimo de margen "saludable"
 
-// ─── Sección de entradas por tipo ────────────────────────────────────────────
-const EntriesSection: React.FC<{
-  type:    ShiftEntryType;
-  entries: ShiftEntry[];
-}> = ({ type, entries }) => {
-  if (entries.length === 0) return null;
-  const config = TYPE_CONFIG[type];
-
-  return (
-    <Card variant="outlined" style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={[styles.sectionIcon, { backgroundColor: config.bg }]}>
-          <Feather name={config.icon as any} size={14} color={config.color} />
-        </View>
-        <Text style={[styles.sectionTitle, { color: config.color }]}>
-          {config.label} ({entries.length})
-        </Text>
-      </View>
-
-      {entries.map((entry, index) => (
-        <View key={entry.id}>
-          <View style={styles.entryRow}>
-            <View style={styles.entryInfo}>
-              <Text style={styles.entryName}>{entry.ingredientName}</Text>
-              <Text style={styles.entryMeta}>
-                {formatQuantity(entry.quantityUsed, entry.unit)}
-                {entry.note ? ` · ${entry.note}` : ''}
-              </Text>
-            </View>
-            {type === 'usage' && (
-              <Text style={[styles.entryCost, { color: config.color }]}>
-                {formatCurrency(entry.totalCost)}
-              </Text>
-            )}
-          </View>
-          {index < entries.length - 1 && (
-            <View style={styles.divider} />
-          )}
-        </View>
-      ))}
-
-      {type === 'usage' && (
-        <View style={styles.sectionTotal}>
-          <Text style={styles.sectionTotalLabel}>Subtotal</Text>
-          <Text style={[styles.sectionTotalValue, { color: config.color }]}>
-            {formatCurrency(entries.reduce((s, e) => s + e.totalCost, 0))}
-          </Text>
-        </View>
-      )}
-    </Card>
-  );
-};
-
-// ─── Pantalla ─────────────────────────────────────────────────────────────────
+// ─── Componente ───────────────────────────────────────────────────────────────
 export const ShiftHistoryDetailScreen: React.FC<ShiftHistoryDetailScreenProps> = ({
   shift,
   onBack,
 }) => {
+  const [showAllIngredients, setShowAllIngredients] = useState(false);
+
   const isProfit = shift.netProfit >= 0;
 
+  // ── Fechas y duración ─────────────────────────────────────────────────────
   const shiftDate = new Date(shift.openedAt).toLocaleDateString('es-ES', {
     weekday: 'long',
     day:     'numeric',
@@ -130,36 +62,85 @@ export const ShiftHistoryDetailScreen: React.FC<ShiftHistoryDetailScreenProps> =
       })
     : '--';
 
-  // ── Entradas por tipo ─────────────────────────────────────────────────────
-  const usageEntries    = shift.entries.filter(e => e.type === 'usage');
-  const purchaseEntries = shift.entries.filter(e => e.type === 'purchase');
-  const outputEntries   = shift.entries.filter(e => e.type === 'output');
-  const wasteEntries    = shift.entries.filter(e => e.type === 'waste');
+  const duration = (() => {
+    if (!shift.closedAt) return null;
+    const ms = new Date(shift.closedAt).getTime() - new Date(shift.openedAt).getTime();
+    const hours   = Math.floor(ms / (1000 * 60 * 60));
+    const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+  })();
 
-  // ── Consolidar insumos utilizados ─────────────────────────────────────────
+  // ── Margen de ganancia ────────────────────────────────────────────────────
+  const marginPct = shift.totalRevenue > 0
+    ? (shift.netProfit / shift.totalRevenue) * 100
+    : 0;
+
+  const marginVariant: 'success' | 'warning' | 'error' =
+    marginPct >= LOW_MARGIN_THRESHOLD ? 'success'
+    : marginPct >= 0                   ? 'warning'
+    :                                    'error';
+
+  const marginLabel =
+    marginVariant === 'success' ? 'Saludable'
+    : marginVariant === 'warning' ? 'Margen bajo'
+    : 'Pérdida';
+
+  const marginIcon =
+    marginVariant === 'success' ? 'check-circle'
+    : marginVariant === 'warning' ? 'alert-circle'
+    : 'x-circle';
+
+  const marginColor =
+    marginVariant === 'success' ? Colors.success
+    : marginVariant === 'warning' ? Colors.warning
+    : Colors.error;
+
+  // ── Consolidar insumos usados desde las entradas ──────────────────────────
   const usageMap = new Map<string, {
-    name:      string;
-    totalUsed: number;
-    unit:      string;
-    totalCost: number;
+    ingredientId: string;
+    name:         string;
+    totalUsed:    number;
+    unit:         string;
+    totalCost:    number;
   }>();
 
-  for (const entry of usageEntries) {
+  for (const entry of shift.entries) {
+    if (entry.type !== 'usage') continue;
+
     const existing = usageMap.get(entry.ingredientId);
     if (existing) {
       existing.totalUsed += entry.quantityUsed;
       existing.totalCost += entry.totalCost;
     } else {
       usageMap.set(entry.ingredientId, {
-        name:      entry.ingredientName,
-        totalUsed: entry.quantityUsed,
-        unit:      entry.unit,
-        totalCost: entry.totalCost,
+        ingredientId: entry.ingredientId,
+        name:         entry.ingredientName,
+        totalUsed:    entry.quantityUsed,
+        unit:         entry.unit,
+        totalCost:    entry.totalCost,
       });
     }
   }
 
-  const usageSummary = Array.from(usageMap.values());
+  // Ordenar por costo descendente (los más caros primero)
+  const usageSummary = Array.from(usageMap.values()).sort(
+    (a, b) => b.totalCost - a.totalCost
+  );
+
+  const visibleUsage = showAllIngredients
+    ? usageSummary
+    : usageSummary.slice(0, MAX_VISIBLE_INGREDIENTS);
+
+  const hiddenCount = usageSummary.length - MAX_VISIBLE_INGREDIENTS;
+
+  // Total de insumos calculado desde las entradas
+  const totalInsumos = usageSummary.reduce((s, i) => s + i.totalCost, 0);
+
+  // ── Contadores de movimientos ─────────────────────────────────────────────
+  const usageCount    = shift.entries.filter(e => e.type === 'usage').length;
+  const purchaseCount = shift.entries.filter(e => e.type === 'purchase').length;
+  const outputCount   = shift.entries.filter(e => e.type === 'output').length;
+  const wasteCount    = shift.entries.filter(e => e.type === 'waste').length;
 
   return (
     <View style={styles.screen}>
@@ -177,123 +158,292 @@ export const ShiftHistoryDetailScreen: React.FC<ShiftHistoryDetailScreenProps> =
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Resultado principal ───────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════════════
+            BLOQUE 1: GANANCIA NETA (destacado)
+        ══════════════════════════════════════════════════════════════════ */}
         <Card
           variant="elevated"
           style={[
-            styles.resultCard,
-            isProfit ? styles.resultCardProfit : styles.resultCardLoss,
+            styles.profitCard,
+            isProfit ? styles.profitCardSuccess : styles.profitCardLoss,
           ]}
         >
-          <View style={styles.resultHeader}>
+          <View style={styles.profitHeader}>
             <Feather
               name={isProfit ? 'trending-up' : 'trending-down'}
-              size={22}
-              color={isProfit ? Colors.success : Colors.error}
+              size={20}
+              color={marginColor}
             />
-            <Text style={styles.resultTitle}>
-              {isProfit ? 'Ganancia del turno' : 'Pérdida del turno'}
+            <Text style={styles.profitHeaderLabel}>
+              {isProfit ? 'Ganancia neta' : 'Pérdida neta'}
             </Text>
-            <Badge
-              label={isProfit ? 'Ganancia' : 'Pérdida'}
-              variant={isProfit ? 'success' : 'error'}
-              size="sm"
-            />
+            <View style={styles.badgeWithIcon}>
+              <Feather
+                name={marginIcon as any}
+                size={14}
+                color={marginColor}
+              />
+              <Badge
+                label={marginLabel}
+                variant={marginVariant}
+                size="sm"
+              />
+            </View>
           </View>
 
-          <Text style={[
-            styles.resultAmount,
-            isProfit ? styles.profitText : styles.lossText,
-          ]}>
-            {formatCurrency(Math.abs(shift.netProfit))}
+          <Text style={[styles.profitAmount, { color: marginColor }]}>
+            {isProfit ? '' : '− '}{formatCurrency(Math.abs(shift.netProfit))}
           </Text>
 
-          <View style={styles.resultBreakdown}>
-            <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownLabel}>Recaudado</Text>
-              <Text style={styles.breakdownValue}>
-                {formatCurrency(shift.totalRevenue)}
+          {shift.totalRevenue > 0 && (
+            <View style={styles.marginBarWrapper}>
+              <View style={styles.marginBarTrack}>
+                <View
+                  style={[
+                    styles.marginBarFill,
+                    {
+                      width:           `${Math.min(Math.max(marginPct, 0), 100)}%`,
+                      backgroundColor: marginColor,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.marginBarLabel, { color: marginColor }]}>
+                {marginPct.toFixed(1)}% sobre lo recaudado
               </Text>
             </View>
-            <View style={styles.breakdownDivider} />
-            <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownLabel}>Invertido</Text>
-              <Text style={styles.breakdownValue}>
-                {formatCurrency(shift.totalInvested)}
-              </Text>
-            </View>
-            <View style={styles.breakdownDivider} />
-            <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownLabel}>Horario</Text>
-              <Text style={styles.breakdownValue}>
-                {openedTime} — {closedTime}
-              </Text>
-            </View>
-          </View>
+          )}
 
-          {/* ── Conteo por categoría ───────────────────────────────── */}
-          <View style={styles.categoryStats}>
-            {(Object.keys(TYPE_CONFIG) as ShiftEntryType[]).map(type => {
-              const count  = shift.entries.filter(e => e.type === type).length;
-              const config = TYPE_CONFIG[type];
-              if (count === 0) return null;
-              return (
-                <View key={type} style={[styles.categoryStat, { backgroundColor: config.bg }]}>
-                  <Feather name={config.icon as any} size={12} color={config.color} />
-                  <Text style={[styles.categoryStatText, { color: config.color }]}>
-                    {count} {config.label.split(' ')[0].toLowerCase()}
-                  </Text>
-                </View>
-              );
-            })}
+          <View style={styles.durationRow}>
+            <Feather name="clock" size={12} color={Colors.textMuted} />
+            <Text style={styles.durationText}>
+              {openedTime} — {closedTime}
+              {duration ? `  ·  ${duration}` : ''}
+            </Text>
           </View>
         </Card>
 
-        {/* ── Resumen consolidado de insumos utilizados ─────────────── */}
-        {usageSummary.length > 0 && (
-          <Card variant="outlined" style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={[styles.sectionIcon, { backgroundColor: Colors.primaryLight }]}>
-                <Feather name="bar-chart-2" size={14} color={Colors.primary} />
+        {/* ══════════════════════════════════════════════════════════════════
+            BLOQUE 2: DINERO RECAUDADO
+        ══════════════════════════════════════════════════════════════════ */}
+        <Card variant="outlined" style={styles.blockCard}>
+          <View style={styles.blockHeader}>
+            <View style={[styles.blockIcon, { backgroundColor: Colors.successLight }]}>
+              <Feather name="dollar-sign" size={14} color={Colors.success} />
+            </View>
+            <Text style={[styles.blockTitle, { color: Colors.success }]}>
+              Dinero recaudado
+            </Text>
+            <Text style={styles.blockTotal}>{formatCurrency(shift.totalRevenue)}</Text>
+          </View>
+
+          <View style={styles.subItem}>
+            <View style={styles.subItemLeft}>
+              <Text style={styles.bullet}>├─</Text>
+              <Text style={styles.subItemLabel}>Efectivo</Text>
+            </View>
+            <Text style={styles.subItemValue}>
+              {formatCurrency(shift.cashRevenue)}
+            </Text>
+          </View>
+
+          <View style={styles.subItem}>
+            <View style={styles.subItemLeft}>
+              <Text style={styles.bullet}>└─</Text>
+              <Text style={styles.subItemLabel}>Transferencia</Text>
+            </View>
+            <Text style={styles.subItemValue}>
+              {formatCurrency(shift.transferRevenue)}
+            </Text>
+          </View>
+        </Card>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            BLOQUE 3: DESCUENTOS
+        ══════════════════════════════════════════════════════════════════ */}
+        <Card variant="outlined" style={styles.blockCard}>
+          <View style={styles.blockHeader}>
+            <View style={[styles.blockIcon, { backgroundColor: Colors.errorLight }]}>
+              <Feather name="trending-down" size={14} color={Colors.error} />
+            </View>
+            <Text style={[styles.blockTitle, { color: Colors.error }]}>
+              Descuentos
+            </Text>
+            <Text style={[styles.blockTotal, { color: Colors.error }]}>
+              − {formatCurrency(shift.totalInvested)}
+            </Text>
+          </View>
+
+          {shift.transferCommission > 0 && (
+            <View style={styles.subItem}>
+              <View style={styles.subItemLeft}>
+                <Text style={styles.bullet}>├─</Text>
+                <Text style={styles.subItemLabel}>
+                  Comisión transferencia ({TRANSFER_COMMISSION_PCT}%)
+                </Text>
               </View>
-              <Text style={[styles.sectionTitle, { color: Colors.primary }]}>
-                Resumen de insumos utilizados
+              <Text style={[styles.subItemValue, styles.subItemValueNegative]}>
+                − {formatCurrency(shift.transferCommission)}
+              </Text>
+            </View>
+          )}
+
+          {shift.fixedCosts > 0 && (
+            <View style={styles.subItem}>
+              <View style={styles.subItemLeft}>
+                <Text style={styles.bullet}>
+                  {shift.transferCommission > 0 ? '├─' : '┌─'}
+                </Text>
+                <Text style={styles.subItemLabel}>
+                  Gastos fijos ({FIXED_COSTS_PCT}%)
+                </Text>
+              </View>
+              <Text style={[styles.subItemValue, styles.subItemValueNegative]}>
+                − {formatCurrency(shift.fixedCosts)}
+              </Text>
+            </View>
+          )}
+
+          {totalInsumos > 0 && (
+            <View style={styles.subItem}>
+              <View style={styles.subItemLeft}>
+                <Text style={styles.bullet}>└─</Text>
+                <Text style={styles.subItemLabel}>Inversión en insumos</Text>
+              </View>
+              <Text style={[styles.subItemValue, styles.subItemValueNegative]}>
+                − {formatCurrency(totalInsumos)}
+              </Text>
+            </View>
+          )}
+        </Card>
+
+        {/* ══════════════════════════════════════════════════════════════════
+            BLOQUE 4: INSUMOS USADOS EN ESTE TURNO
+        ══════════════════════════════════════════════════════════════════ */}
+        {usageSummary.length > 0 && (
+          <Card variant="outlined" style={styles.blockCard}>
+            <View style={styles.blockHeader}>
+              <View style={[styles.blockIcon, { backgroundColor: Colors.primaryLight }]}>
+                <Feather name="tool" size={14} color={Colors.primary} />
+              </View>
+              <Text style={[styles.blockTitle, { color: Colors.primary }]}>
+                Insumos usados en este turno
+              </Text>
+              <Text style={[styles.blockTotal, { color: Colors.primary }]}>
+                {formatCurrency(totalInsumos)}
               </Text>
             </View>
 
-            {usageSummary.map((item, index) => (
-              <View key={item.name}>
-                <View style={styles.summaryRow}>
-                  <View style={styles.summaryInfo}>
-                    <Text style={styles.summaryName}>{item.name}</Text>
-                    <Text style={styles.summaryUsed}>
-                      Total: {formatQuantity(item.totalUsed, item.unit)}
-                    </Text>
-                  </View>
-                  <Text style={styles.summaryCost}>
+            {visibleUsage.map((item) => (
+              <View key={item.ingredientId} style={styles.inventoryRow}>
+                <View style={styles.inventoryLeft}>
+                  <Text style={styles.inventoryName}>{item.name}</Text>
+                  <Text style={styles.inventoryMeta}>
+                    Se usó: {formatQuantity(item.totalUsed, item.unit)}
+                  </Text>
+                </View>
+                <View style={styles.inventoryRight}>
+                  <Text style={styles.inventoryCost}>
                     {formatCurrency(item.totalCost)}
                   </Text>
                 </View>
-                {index < usageSummary.length - 1 && (
-                  <View style={styles.divider} />
-                )}
               </View>
             ))}
 
-            <View style={styles.sectionTotal}>
-              <Text style={styles.sectionTotalLabel}>Total invertido</Text>
-              <Text style={[styles.sectionTotalValue, { color: Colors.primary }]}>
-                {formatCurrency(shift.totalInvested)}
-              </Text>
-            </View>
+            {!showAllIngredients && hiddenCount > 0 && (
+              <TouchableOpacity
+                style={styles.showMoreButton}
+                onPress={() => setShowAllIngredients(true)}
+                activeOpacity={0.7}
+              >
+                <Feather name="chevron-down" size={14} color={Colors.primary} />
+                <Text style={styles.showMoreText}>
+                  Ver {hiddenCount} más
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {showAllIngredients && usageSummary.length > MAX_VISIBLE_INGREDIENTS && (
+              <TouchableOpacity
+                style={styles.showMoreButton}
+                onPress={() => setShowAllIngredients(false)}
+                activeOpacity={0.7}
+              >
+                <Feather name="chevron-up" size={14} color={Colors.primary} />
+                <Text style={styles.showMoreText}>Ver menos</Text>
+              </TouchableOpacity>
+            )}
           </Card>
         )}
 
-        {/* ── Detalle por categoría ─────────────────────────────────── */}
-        <EntriesSection type="usage"    entries={usageEntries}    />
-        <EntriesSection type="purchase" entries={purchaseEntries} />
-        <EntriesSection type="output"   entries={outputEntries}   />
-        <EntriesSection type="waste"    entries={wasteEntries}    />
+        {/* ══════════════════════════════════════════════════════════════════
+            BLOQUE 5: MOVIMIENTOS DEL TURNO
+        ══════════════════════════════════════════════════════════════════ */}
+        <Card variant="outlined" style={styles.blockCard}>
+          <View style={styles.blockHeader}>
+            <View style={[styles.blockIcon, { backgroundColor: Colors.infoLight }]}>
+              <Feather name="activity" size={14} color={Colors.info} />
+            </View>
+            <Text style={[styles.blockTitle, { color: Colors.info }]}>
+              Movimientos del turno
+            </Text>
+          </View>
+
+          <View style={styles.movementsGrid}>
+            <View style={styles.movementItem}>
+              <View style={[styles.movementIcon, { backgroundColor: Colors.primaryLight }]}>
+                <Feather name="tool" size={12} color={Colors.primary} />
+              </View>
+              <View style={styles.movementText}>
+                <Text style={styles.movementCount}>{usageCount}</Text>
+                <Text style={styles.movementLabel}>Utilizados</Text>
+              </View>
+            </View>
+
+            <View style={styles.movementItem}>
+              <View style={[styles.movementIcon, { backgroundColor: Colors.successLight }]}>
+                <Feather name="arrow-down-circle" size={12} color={Colors.success} />
+              </View>
+              <View style={styles.movementText}>
+                <Text style={styles.movementCount}>{purchaseCount}</Text>
+                <Text style={styles.movementLabel}>Entradas</Text>
+              </View>
+            </View>
+
+            <View style={styles.movementItem}>
+              <View style={[styles.movementIcon, { backgroundColor: Colors.infoLight }]}>
+                <Feather name="arrow-up-circle" size={12} color={Colors.info} />
+              </View>
+              <View style={styles.movementText}>
+                <Text style={styles.movementCount}>{outputCount}</Text>
+                <Text style={styles.movementLabel}>Salidas</Text>
+              </View>
+            </View>
+
+            <View style={styles.movementItem}>
+              <View style={[styles.movementIcon, { backgroundColor: Colors.warningLight }]}>
+                <Feather name="alert-triangle" size={12} color={Colors.warning} />
+              </View>
+              <View style={styles.movementText}>
+                <Text style={styles.movementCount}>{wasteCount}</Text>
+                <Text style={styles.movementLabel}>Mermas</Text>
+              </View>
+            </View>
+          </View>
+        </Card>
+
+        {/* ── Botón volver ────────────────────────────────────────────────── */}
+        <Button
+          label="Volver al historial"
+          onPress={onBack}
+          variant="primary"
+          size="lg"
+          fullWidth
+          style={styles.finishButton}
+          leftIcon={
+            <Feather name="arrow-left" size={18} color={Colors.textOnPrimary} />
+          }
+        />
       </ScrollView>
     </View>
   );
@@ -316,115 +466,97 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xxxl,
   },
 
-  resultCard: {
+  // ── Bloque 1: Ganancia ────────────────────────────────────────────────────
+  profitCard: {
     gap:     Spacing.md,
-    padding: Spacing.xl,
+    padding: Spacing.lg,
   },
 
-  resultCardProfit: {
+  profitCardSuccess: {
     backgroundColor: Colors.successLight,
     borderWidth:     1.5,
     borderColor:     Colors.success,
   },
 
-  resultCardLoss: {
+  profitCardLoss: {
     backgroundColor: Colors.errorLight,
     borderWidth:     1.5,
     borderColor:     Colors.error,
   },
 
-  resultHeader: {
+  profitHeader: {
     flexDirection: 'row',
     alignItems:    'center',
     gap:           Spacing.sm,
-    flexWrap:      'wrap',
   },
 
-  resultTitle: {
-    flex:       1,
-    fontSize:   Typography.md,
-    fontWeight: Typography.semibold,
-    color:      Colors.textPrimary,
+  profitHeaderLabel: {
+    flex:          1,
+    fontSize:      Typography.sm,
+    fontWeight:    Typography.semibold,
+    color:         Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 
-  resultAmount: {
+  badgeWithIcon: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           Spacing.xs,
+  },
+
+  profitAmount: {
     fontSize:   Typography.xxxl,
     fontWeight: Typography.bold,
   },
 
-  profitText: {
-    color: Colors.success,
+  marginBarWrapper: {
+    gap: Spacing.xs,
   },
 
-  lossText: {
-    color: Colors.error,
-  },
-
-  resultBreakdown: {
-    flexDirection:   'row',
+  marginBarTrack: {
+    height:          8,
     backgroundColor: Colors.surface,
-    borderRadius:    Radius.md,
-    padding:         Spacing.md,
-    alignItems:      'center',
+    borderRadius:    Radius.full,
+    overflow:        'hidden',
   },
 
-  breakdownItem: {
-    flex:       1,
-    alignItems: 'center',
-    gap:        4,
+  marginBarFill: {
+    height:       8,
+    borderRadius: Radius.full,
   },
 
-  breakdownDivider: {
-    width:            1,
-    height:           36,
-    backgroundColor:  Colors.border,
-    marginHorizontal: Spacing.xs,
+  marginBarLabel: {
+    fontSize:   Typography.xs,
+    fontWeight: Typography.semibold,
+    textAlign:  'right',
   },
 
-  breakdownLabel: {
-    fontSize:  Typography.xs,
-    color:     Colors.textMuted,
-    textAlign: 'center',
-  },
-
-  breakdownValue: {
-    fontSize:   Typography.sm,
-    fontWeight: Typography.bold,
-    color:      Colors.textPrimary,
-    textAlign:  'center',
-  },
-
-  categoryStats: {
+  durationRow: {
     flexDirection: 'row',
-    flexWrap:      'wrap',
+    alignItems:    'center',
     gap:           Spacing.xs,
   },
 
-  categoryStat: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               4,
-    paddingVertical:   4,
-    paddingHorizontal: Spacing.sm,
-    borderRadius:      Radius.full,
+  durationText: {
+    fontSize: Typography.xs,
+    color:    Colors.textMuted,
   },
 
-  categoryStatText: {
-    fontSize:   Typography.xs,
-    fontWeight: Typography.semibold,
+  // ── Bloques 2, 3, 4, 5 ────────────────────────────────────────────────────
+  blockCard: {
+    gap:     Spacing.sm,
+    padding: Spacing.md,
   },
 
-  section: {
-    gap: Spacing.sm,
-  },
-
-  sectionHeader: {
+  blockHeader: {
     flexDirection: 'row',
     alignItems:    'center',
     gap:           Spacing.sm,
+    marginBottom:  Spacing.xs,
   },
 
-  sectionIcon: {
+  blockIcon: {
     width:          26,
     height:         26,
     borderRadius:   Radius.sm,
@@ -432,7 +564,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  sectionTitle: {
+  blockTitle: {
     flex:          1,
     fontSize:      Typography.sm,
     fontWeight:    Typography.semibold,
@@ -440,88 +572,142 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
 
-  sectionTotal: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'space-between',
-    paddingTop:     Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    marginTop:      Spacing.xs,
+  blockTotal: {
+    fontSize:   Typography.lg,
+    fontWeight: Typography.bold,
+    color:      Colors.textPrimary,
   },
 
-  sectionTotalLabel: {
+  subItem: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+    paddingVertical: 4,
+    paddingLeft:     Spacing.xs,
+  },
+
+  subItemLeft: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           Spacing.xs,
+    flex:          1,
+  },
+
+  bullet: {
+    fontSize:   Typography.sm,
+    color:      Colors.textMuted,
+    fontWeight: Typography.regular,
+  },
+
+  subItemLabel: {
+    fontSize: Typography.sm,
+    color:    Colors.textSecondary,
+    flex:     1,
+  },
+
+  subItemValue: {
     fontSize:   Typography.sm,
     fontWeight: Typography.semibold,
-    color:      Colors.textSecondary,
+    color:      Colors.textPrimary,
   },
 
-  sectionTotalValue: {
+  subItemValueNegative: {
+    color: Colors.error,
+  },
+
+  // ── Bloque 4: Insumos usados ──────────────────────────────────────────────
+  inventoryRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    paddingVertical:   Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+
+  inventoryLeft: {
+    flex: 1,
+    gap:  2,
+  },
+
+  inventoryName: {
+    fontSize:   Typography.base,
+    fontWeight: Typography.medium,
+    color:      Colors.textPrimary,
+  },
+
+  inventoryMeta: {
+    fontSize: Typography.xs,
+    color:    Colors.textMuted,
+  },
+
+  inventoryRight: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           Spacing.xs,
+  },
+
+  inventoryCost: {
+    fontSize:   Typography.base,
+    fontWeight: Typography.semibold,
+    color:      Colors.primary,
+  },
+
+  showMoreButton: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             Spacing.xs,
+    paddingVertical: Spacing.sm,
+    marginTop:       Spacing.xs,
+  },
+
+  showMoreText: {
+    fontSize:   Typography.sm,
+    fontWeight: Typography.semibold,
+    color:      Colors.primary,
+  },
+
+  // ── Bloque 5: Movimientos ─────────────────────────────────────────────────
+  movementsGrid: {
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           Spacing.sm,
+  },
+
+  movementItem: {
+    width:           '48%',
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+
+  movementIcon: {
+    width:          32,
+    height:         32,
+    borderRadius:   Radius.sm,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+
+  movementText: {
+    gap: 2,
+  },
+
+  movementCount: {
     fontSize:   Typography.md,
     fontWeight: Typography.bold,
-  },
-
-  summaryRow: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    paddingVertical: Spacing.xs,
-    gap:             Spacing.md,
-  },
-
-  summaryInfo: {
-    flex: 1,
-    gap:  2,
-  },
-
-  summaryName: {
-    fontSize:   Typography.base,
-    fontWeight: Typography.medium,
     color:      Colors.textPrimary,
   },
 
-  summaryUsed: {
+  movementLabel: {
     fontSize: Typography.xs,
     color:    Colors.textMuted,
   },
 
-  summaryCost: {
-    fontSize:   Typography.base,
-    fontWeight: Typography.semibold,
-    color:      Colors.textPrimary,
-  },
-
-  entryRow: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    paddingVertical: Spacing.xs,
-  },
-
-  entryInfo: {
-    flex: 1,
-    gap:  2,
-  },
-
-  entryName: {
-    fontSize:   Typography.base,
-    fontWeight: Typography.medium,
-    color:      Colors.textPrimary,
-  },
-
-  entryMeta: {
-    fontSize: Typography.xs,
-    color:    Colors.textMuted,
-  },
-
-  entryCost: {
-    fontSize:   Typography.base,
-    fontWeight: Typography.semibold,
-  },
-
-  divider: {
-    height:          1,
-    backgroundColor: Colors.divider,
-    marginVertical:  Spacing.xs,
+  // ── Botón finalizar ───────────────────────────────────────────────────────
+  finishButton: {
+    marginTop: Spacing.sm,
   },
 });
